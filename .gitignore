@@ -1,0 +1,29 @@
+# ── Node / Vite ──────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+coverage/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── IDEs ─────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.sw?
+
+# ── Configuración local y secretos ───────────
+.env
+.env.*
+!.env.example
+*.local
+
+# ── Sistema operativo ────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
