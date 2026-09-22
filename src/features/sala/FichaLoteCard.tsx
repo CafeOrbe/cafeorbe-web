@@ -11,8 +11,8 @@ export function FichaLoteCard({ subasta }: { subasta: Detalle }) {
         <dl className="ficha">
           <dt>Identificación</dt>
           <dd>{f.identificacion}</dd>
-          <dt>Raza</dt>
-          <dd>{f.raza}</dd>
+          <dt>Tipo de café</dt>
+          <dd>{f.tipoCafe}</dd>
           <dt>Peso</dt>
           <dd>{f.pesoKg} kg</dd>
           <dt>Edad</dt>

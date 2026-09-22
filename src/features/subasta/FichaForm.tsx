@@ -11,11 +11,11 @@ export function FichaForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar:
   const { mostrar } = useAvisos()
   const f = subasta.ficha
   const [identificacion, setIdentificacion] = useState(f?.identificacion ?? '')
-  const [raza, setRaza] = useState(f?.raza ?? '')
+  const [tipoCafe, setTipoCafe] = useState(f?.tipoCafe ?? '')
   const [pesoKg, setPesoKg] = useState(f ? String(f.pesoKg) : '')
   const [edadMeses, setEdadMeses] = useState(f ? String(f.edadMeses) : '')
   const [observaciones, setObservaciones] = useState(f?.observaciones ?? '')
-  const [errores, setErrores] = useState<Errores<'identificacion' | 'raza' | 'pesoKg' | 'edadMeses'>>({})
+  const [errores, setErrores] = useState<Errores<'identificacion' | 'tipoCafe' | 'pesoKg' | 'edadMeses'>>({})
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const bloqueada = subasta.estado !== 'PROGRAMADA'
@@ -23,7 +23,7 @@ export function FichaForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar:
   async function guardar(evento: FormEvent) {
     evento.preventDefault()
     setErrorGeneral(null)
-    const encontrados = validarFicha({ identificacion, raza, pesoKg, edadMeses })
+    const encontrados = validarFicha({ identificacion, tipoCafe, pesoKg, edadMeses })
     setErrores(encontrados)
     if (hayErrores(encontrados)) return
 
@@ -31,7 +31,7 @@ export function FichaForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar:
     try {
       const actualizada = await api.guardarFicha(subasta.id, {
         identificacion: identificacion.trim(),
-        raza: raza.trim(),
+        tipoCafe: tipoCafe.trim(),
         pesoKg: Number(pesoKg),
         edadMeses: Number(edadMeses),
         observaciones: observaciones.trim(),
@@ -55,8 +55,8 @@ export function FichaForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar:
           <Campo etiqueta="Identificación" error={errores.identificacion}>
             <input type="text" value={identificacion} onChange={(e) => setIdentificacion(e.target.value)} />
           </Campo>
-          <Campo etiqueta="Raza" error={errores.raza}>
-            <input type="text" value={raza} onChange={(e) => setRaza(e.target.value)} />
+          <Campo etiqueta="Tipo de café" error={errores.tipoCafe}>
+            <input type="text" value={tipoCafe} onChange={(e) => setTipoCafe(e.target.value)} />
           </Campo>
           <Campo etiqueta="Peso (kg)" error={errores.pesoKg}>
             <input type="number" inputMode="decimal" min="0" step="0.1" value={pesoKg} onChange={(e) => setPesoKg(e.target.value)} />

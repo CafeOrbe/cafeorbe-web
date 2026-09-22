@@ -24,7 +24,11 @@ export function validarCrearSubasta(
   const errores: Errores<'nombre' | 'fechaInicio'> = {}
   if (datos.nombre.trim() === '') errores.nombre = MSG_NOMBRE_OBLIGATORIO
   if (datos.fechaInicio === '') errores.fechaInicio = 'La fecha de inicio es obligatoria'
-  else if (new Date(datos.fechaInicio).getTime() <= ahora.getTime()) errores.fechaInicio = MSG_FECHA_FUTURA
+  else {
+    const minutoActual = new Date(ahora)
+    minutoActual.setSeconds(0, 0)
+    if (new Date(datos.fechaInicio).getTime() < minutoActual.getTime()) errores.fechaInicio = MSG_FECHA_FUTURA
+  }
   return errores
 }
 
@@ -42,13 +46,13 @@ export function validarReglas(datos: {
 
 export function validarFicha(datos: {
   identificacion: string
-  raza: string
+  tipoCafe: string
   pesoKg: string
   edadMeses: string
-}): Errores<'identificacion' | 'raza' | 'pesoKg' | 'edadMeses'> {
-  const errores: Errores<'identificacion' | 'raza' | 'pesoKg' | 'edadMeses'> = {}
+}): Errores<'identificacion' | 'tipoCafe' | 'pesoKg' | 'edadMeses'> {
+  const errores: Errores<'identificacion' | 'tipoCafe' | 'pesoKg' | 'edadMeses'> = {}
   if (datos.identificacion.trim() === '') errores.identificacion = 'La identificación es obligatoria'
-  if (datos.raza.trim() === '') errores.raza = 'La raza es obligatoria'
+  if (datos.tipoCafe.trim() === '') errores.tipoCafe = 'El tipo de café es obligatorio'
   if (numeroPositivo(datos.pesoKg) === null) errores.pesoKg = 'El peso debe ser mayor que cero'
   const edad = datos.edadMeses.trim() === '' ? NaN : Number(datos.edadMeses)
   if (!Number.isInteger(edad) || edad < 0) errores.edadMeses = 'La edad debe ser un número de meses (0 o más)'

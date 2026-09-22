@@ -25,7 +25,7 @@ export interface Resumen {
 
 export interface Ficha {
   identificacion: string
-  raza: string
+  tipoCafe: string
   pesoKg: number
   edadMeses: number
   observaciones: string | null
@@ -83,7 +83,7 @@ export interface EstadoTransmision {
 
 export interface FichaFormulario {
   identificacion: string
-  raza: string
+  tipoCafe: string
   pesoKg: number
   edadMeses: number
   observaciones: string

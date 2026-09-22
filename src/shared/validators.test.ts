@@ -68,16 +68,16 @@ describe('HU-10 · validarReglas', () => {
 })
 
 describe('HU-09 · validarFicha', () => {
-  it('exige identificación, raza, peso mayor que cero y edad entera', () => {
-    expect(validarFicha({ identificacion: '', raza: ' ', pesoKg: '0', edadMeses: '-1' })).toEqual({
+  it('exige identificación, tipo de café, peso mayor que cero y edad entera', () => {
+    expect(validarFicha({ identificacion: '', tipoCafe: ' ', pesoKg: '0', edadMeses: '-1' })).toEqual({
       identificacion: 'La identificación es obligatoria',
-      raza: 'La raza es obligatoria',
+      tipoCafe: 'El tipo de café es obligatorio',
       pesoKg: 'El peso debe ser mayor que cero',
       edadMeses: 'La edad debe ser un número de meses (0 o más)',
     })
   })
 
   it('acepta una ficha completa', () => {
-    expect(validarFicha({ identificacion: 'L-001', raza: 'Holstein', pesoKg: '450.5', edadMeses: '36' })).toEqual({})
+    expect(validarFicha({ identificacion: 'L-001', tipoCafe: 'Arábica', pesoKg: '450.5', edadMeses: '36' })).toEqual({})
   })
 })
