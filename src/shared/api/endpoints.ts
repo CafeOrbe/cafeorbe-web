@@ -1,4 +1,4 @@
-import { peticion } from './client'
+import { peticion, peticionAlSalir } from './client'
 import type {
   Credenciales,
   Detalle,
@@ -33,6 +33,8 @@ export const api = {
   // Transmisión (HU-11)
   iniciarTransmision: (id: string) => peticion<Credenciales>('POST', `/api/streaming/subastas/${id}/iniciar`),
   detenerTransmision: (id: string) => peticion<EstadoTransmision>('POST', `/api/streaming/subastas/${id}/detener`),
+  /** Hallazgo 12: aviso de "detener" que se envía aunque la pestaña se esté cerrando. */
+  detenerTransmisionAlSalir: (id: string) => peticionAlSalir('POST', `/api/streaming/subastas/${id}/detener`),
   estadoTransmision: (id: string) => peticion<EstadoTransmision>('GET', `/api/streaming/subastas/${id}/estado`),
   credencialesTransmision: (id: string) =>
     peticion<Credenciales>('GET', `/api/streaming/subastas/${id}/credenciales`),
