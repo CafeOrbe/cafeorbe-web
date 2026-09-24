@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Room, RoomEvent, Track, type RemoteTrack } from 'livekit-client'
 import { api } from '../../shared/api/endpoints'
+import { verificarDispositivos } from './dispositivos'
 
 export const MSG_SIN_TRANSMISION = 'La transmisión aún no ha iniciado'
 export const MSG_TRANSMISION_FINALIZADA = 'Transmisión finalizada'
 export const MSG_CAMARA = 'No se pudo acceder a la cámara'
+export const MSG_SIN_MICROFONO = 'No se pudo acceder al micrófono: la transmisión va sin audio'
 
 interface Props {
   subastaId: string
@@ -25,6 +27,7 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
   const [publicando, setPublicando] = useState(false)
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
 
   const enVivo = publicando || transmitiendo
   if (enVivo) estuvoEnVivo.current = true
@@ -78,7 +81,14 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
   // ── Subastador: si sale de la sala mientras transmite, se corta el video ──
   useEffect(() => {
     if (!esSubastador) return
+    // Hallazgo 12: al cerrar o recargar la pestaña React no alcanza a desmontar el componente, así que se avisa
+    // con una petición keepalive. Si tampoco llega (sin conexión), el servidor se entera por el webhook de LiveKit.
+    const alCerrarPestana = () => {
+      if (sala.current) api.detenerTransmisionAlSalir(subastaId)
+    }
+    window.addEventListener('pagehide', alCerrarPestana)
     return () => {
+      window.removeEventListener('pagehide', alCerrarPestana)
       if (sala.current) {
         desconectar()
         void api.detenerTransmision(subastaId).catch(() => undefined)
@@ -88,13 +98,13 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
 
   async function iniciar() {
     setError(null)
+    setAviso(null)
     setOcupado(true)
     try {
-      // Primero se pide el permiso de cámara: si se niega, no se cambia el indicador ni se avisa a nadie.
-      try {
-        const prueba = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        prueba.getTracks().forEach((t) => t.stop())
-      } catch {
+      // Primero se piden los permisos: si se niega la cámara, no se cambia el indicador ni se avisa a nadie.
+      // El micrófono es opcional (hallazgo 15): sin él se transmite solo video.
+      const { camara, microfono } = await verificarDispositivos((r) => navigator.mediaDevices.getUserMedia(r))
+      if (!camara) {
         setError(MSG_CAMARA)
         return
       }
@@ -102,8 +112,16 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
       const credenciales = await api.iniciarTransmision(subastaId)
       const nueva = new Room()
       await nueva.connect(credenciales.url, credenciales.token)
-      await nueva.localParticipant.enableCameraAndMicrophone()
       sala.current = nueva
+      await nueva.localParticipant.setCameraEnabled(true)
+      let conAudio = microfono
+      if (conAudio) {
+        conAudio = await nueva.localParticipant.setMicrophoneEnabled(true).then(
+          () => true,
+          () => false,
+        )
+      }
+      if (!conAudio) setAviso(MSG_SIN_MICROFONO)
       nueva.localParticipant.getTrackPublication(Track.Source.Camera)?.track?.attach(videoRef.current!)
       setPublicando(true)
     } catch (e) {
@@ -117,6 +135,7 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
 
   async function detener() {
     setOcupado(true)
+    setAviso(null)
     desconectar()
     try {
       await api.detenerTransmision(subastaId)
@@ -152,6 +171,11 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
             </button>
           )}
         </div>
+      )}
+      {aviso && (
+        <p className="campo__ayuda" role="status">
+          {aviso}
+        </p>
       )}
       {error && (
         <p className="campo__error" role="alert">
