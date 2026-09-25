@@ -1,3 +1,4 @@
+import { CircleAlert, CircleCheck, Info } from 'lucide-react'
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 
 type Tipo = 'info' | 'exito' | 'error'
@@ -13,6 +14,8 @@ interface ContextoAvisos {
 }
 
 const Contexto = createContext<ContextoAvisos | null>(null)
+
+const ICONOS = { info: Info, exito: CircleCheck, error: CircleAlert }
 
 /** Notificaciones temporales en la esquina de la pantalla. */
 export function ProveedorAvisos({ children }: { children: ReactNode }) {
@@ -31,11 +34,15 @@ export function ProveedorAvisos({ children }: { children: ReactNode }) {
     <Contexto.Provider value={valor}>
       {children}
       <div className="avisos" role="status" aria-live="polite">
-        {avisos.map((a) => (
-          <div key={a.id} className={`aviso aviso--${a.tipo}`}>
-            {a.texto}
-          </div>
-        ))}
+        {avisos.map((a) => {
+          const Icono = ICONOS[a.tipo]
+          return (
+            <div key={a.id} className={`aviso aviso--${a.tipo}`}>
+              <Icono aria-hidden="true" />
+              <span>{a.texto}</span>
+            </div>
+          )
+        })}
       </div>
     </Contexto.Provider>
   )

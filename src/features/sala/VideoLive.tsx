@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Room, RoomEvent, Track, type RemoteTrack } from 'livekit-client'
 import { api } from '../../shared/api/endpoints'
+import { EnVivo } from '../../shared/ui/EtiquetaEstado'
+import { Radio, Square, Video, VideoOff } from 'lucide-react'
 import { verificarDispositivos } from './dispositivos'
 
 export const MSG_SIN_TRANSMISION = 'La transmisión aún no ha iniciado'
@@ -155,32 +157,49 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
       <div className="video__marco">
         <video ref={videoRef} autoPlay playsInline muted={esSubastador} />
         <audio ref={audioRef} autoPlay />
-        {mensaje && <p className="video__mensaje">{mensaje}</p>}
-        {enVivo && <span className="en-vivo">● EN VIVO</span>}
+        {mensaje && (
+          <p className="video__mensaje">
+            <span className="video__mensaje-icono" aria-hidden="true">
+              {estuvoEnVivo.current ? <VideoOff /> : <Radio />}
+            </span>
+            {mensaje}
+          </p>
+        )}
+        {enVivo && (
+          <div className="video__insignias">
+            <EnVivo />
+          </div>
+        )}
       </div>
 
-      {esSubastador && (
-        <div className="acciones">
-          {!publicando ? (
-            <button type="button" className="boton boton--primario" onClick={iniciar} disabled={ocupado}>
-              {ocupado ? 'Iniciando…' : 'Iniciar transmisión'}
-            </button>
-          ) : (
-            <button type="button" className="boton boton--peligro" onClick={detener} disabled={ocupado}>
-              Detener transmisión
-            </button>
+      {(esSubastador || aviso || error) && (
+        <div className="video__controles">
+          {esSubastador && (
+            <div className="acciones">
+              {!publicando ? (
+                <button type="button" className="boton boton--primario" onClick={iniciar} disabled={ocupado}>
+                  <Video aria-hidden="true" />
+                  {ocupado ? 'Iniciando…' : 'Iniciar transmisión'}
+                </button>
+              ) : (
+                <button type="button" className="boton boton--peligro" onClick={detener} disabled={ocupado}>
+                  <Square aria-hidden="true" />
+                  Detener transmisión
+                </button>
+              )}
+            </div>
+          )}
+          {aviso && (
+            <p className="campo__ayuda" role="status">
+              {aviso}
+            </p>
+          )}
+          {error && (
+            <p className="campo__error" role="alert">
+              {error}
+            </p>
           )}
         </div>
-      )}
-      {aviso && (
-        <p className="campo__ayuda" role="status">
-          {aviso}
-        </p>
-      )}
-      {error && (
-        <p className="campo__error" role="alert">
-          {error}
-        </p>
       )}
     </div>
   )

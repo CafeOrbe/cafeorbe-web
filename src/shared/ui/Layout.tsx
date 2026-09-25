@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { etiquetaRol } from '../format'
+import { LogOut } from 'lucide-react'
+import { etiquetaRol, iniciales } from '../format'
 import { rutaInicio } from '../routes'
 import { useSesion } from '../session'
+import { Marca } from './Marca'
 import { SaldoOrbes } from './SaldoOrbes'
 
 /** Barra superior (nombre, rol, saldo y Cerrar sesión, HU-02) y contenedor de las pantallas autenticadas. */
@@ -12,20 +14,35 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="app">
+      <a href="#contenido" className="saltar">
+        Saltar al contenido
+      </a>
       <header className="barra">
-        <Link to={rutaInicio(usuario.rol)} className="barra__marca">
-          ☕ CaféOrbe
-        </Link>
-        <div className="barra__usuario">
-          {usuario.rol === 'COMPRADOR' && <SaldoOrbes />}
-          <span className="barra__nombre">{usuario.nombre}</span>
-          <span className={`etiqueta etiqueta--rol-${usuario.rol.toLowerCase()}`}>{etiquetaRol(usuario.rol)}</span>
-          <button type="button" className="boton boton--secundario boton--chico" onClick={cerrarSesion}>
-            Cerrar sesión
-          </button>
+        <div className="barra__interior">
+          <Link to={rutaInicio(usuario.rol)} className="barra__marca" aria-label="CaféOrbe, ir al inicio">
+            <Marca />
+          </Link>
+          <div className="barra__usuario">
+            {usuario.rol === 'COMPRADOR' && <SaldoOrbes />}
+            <span className="usuario">
+              <span className="avatar" aria-hidden="true">
+                {iniciales(usuario.nombre)}
+              </span>
+              <span className="usuario__texto">
+                <span className="barra__nombre">{usuario.nombre}</span>
+                <span className="usuario__rol">{etiquetaRol(usuario.rol)}</span>
+              </span>
+            </span>
+            <button type="button" className="boton boton--fantasma boton--chico" onClick={cerrarSesion} aria-label="Cerrar sesión">
+              <LogOut aria-hidden="true" />
+              <span className="ocultar-movil">Cerrar sesión</span>
+            </button>
+          </div>
         </div>
       </header>
-      <main className="contenedor">{children}</main>
+      <main id="contenido" className="contenedor" tabIndex={-1}>
+        {children}
+      </main>
     </div>
   )
 }

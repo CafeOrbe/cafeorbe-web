@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ArrowRight, ClipboardList, Plus, Settings2 } from 'lucide-react'
 import { api } from '../../shared/api/endpoints'
 import type { Resumen } from '../../shared/api/types'
-import { formatFechaHora, formatOrbes } from '../../shared/format'
 import { rutas } from '../../shared/routes'
-import { EtiquetaEstado } from '../../shared/ui/EtiquetaEstado'
+import { CargandoLotes, EstadoError, EstadoVacio } from '../../shared/ui/Estados'
+import { TarjetaLote } from '../../shared/ui/TarjetaLote'
 
 /** HU-03: las subastas que creó el Subastador. */
 export function MisSubastasPage() {
@@ -25,43 +26,45 @@ export function MisSubastasPage() {
   return (
     <>
       <div className="encabezado">
-        <h1>Mis subastas</h1>
+        <div className="encabezado__texto">
+          <p className="sobretitulo">Panel del Subastador</p>
+          <h1>Mis subastas</h1>
+        </div>
         <Link to={rutas.crearSubasta} className="boton boton--primario">
+          <Plus aria-hidden="true" />
           Crear subasta
         </Link>
       </div>
 
-      {error && (
-        <p className="campo__error" role="alert">
-          {error}
-        </p>
+      {error && <EstadoError titulo="No pudimos cargar tus subastas" mensaje={error} />}
+      {!error && subastas === null && <CargandoLotes texto="Cargando…" />}
+      {subastas?.length === 0 && (
+        <EstadoVacio icono={ClipboardList} titulo="Aún no has creado ninguna subasta." texto="Crea tu primera subasta, registra la ficha del lote y sal en vivo.">
+          <Link to={rutas.crearSubasta} className="boton boton--primario">
+            <Plus aria-hidden="true" />
+            Crear subasta
+          </Link>
+        </EstadoVacio>
       )}
-      {!error && subastas === null && <p className="vacio">Cargando…</p>}
-      {subastas?.length === 0 && <p className="vacio">Aún no has creado ninguna subasta.</p>}
 
-      <ul className="lista">
-        {subastas?.map((s) => (
-          <li key={s.id} className="tarjeta tarjeta--fila">
-            <div>
-              <h2 className="tarjeta__titulo">{s.nombre}</h2>
-              <p className="tarjeta__texto">
-                <EtiquetaEstado estado={s.estado} /> · {formatFechaHora(s.fechaInicio)}
-                {s.precioActual !== null && <> · {formatOrbes(s.precioActual)}</>} · {s.cantidadPujas} pujas
-              </p>
-            </div>
-            <div className="acciones">
+      {subastas && subastas.length > 0 && (
+        <ul className="rejilla-lotes">
+          {subastas.map((s) => (
+            <TarjetaLote key={s.id} subasta={s} mostrarSubastador={false}>
               {s.estado === 'PROGRAMADA' && (
-                <Link to={rutas.gestionar(s.id)} className="boton boton--secundario">
+                <Link to={rutas.gestionar(s.id)} className="boton boton--secundario boton--chico">
+                  <Settings2 aria-hidden="true" />
                   Configurar
                 </Link>
               )}
-              <Link to={rutas.sala(s.id)} className="boton boton--primario">
+              <Link to={rutas.sala(s.id)} className="boton boton--primario boton--chico">
                 Ir a la sala
+                <ArrowRight aria-hidden="true" />
               </Link>
-            </div>
-          </li>
-        ))}
-      </ul>
+            </TarjetaLote>
+          ))}
+        </ul>
+      )}
     </>
   )
 }

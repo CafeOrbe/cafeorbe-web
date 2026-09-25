@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom'
 import { App } from './App'
 import { ProveedorSesion } from './shared/session'
 import { ProveedorAvisos } from './shared/ui/Avisos'
+import '@fontsource-variable/fraunces/opsz.css'
+import '@fontsource-variable/geist'
 import './styles.css'
 
 createRoot(document.getElementById('root')!).render(

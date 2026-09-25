@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ArrowRight, CalendarClock, Coffee } from 'lucide-react'
 import { api } from '../../shared/api/endpoints'
 import type { Resumen } from '../../shared/api/types'
-import { etiquetaRol, formatFechaHora, formatOrbes } from '../../shared/format'
+import { formatOrbes } from '../../shared/format'
 import { rutas } from '../../shared/routes'
 import { useSesion } from '../../shared/session'
 import { useAvisos } from '../../shared/ui/Avisos'
-import { EtiquetaEstado } from '../../shared/ui/EtiquetaEstado'
+import { EnVivo } from '../../shared/ui/EtiquetaEstado'
+import { CargandoLotes, EstadoError, EstadoVacio } from '../../shared/ui/Estados'
+import { PortadaLote } from '../../shared/ui/PortadaLote'
+import { TarjetaLote } from '../../shared/ui/TarjetaLote'
 import { useAvisoDeRuta } from '../../shared/ui/useAvisoDeRuta'
 
 /** HU-04: subastas disponibles. HU-07: aviso de la carga automática de Orbes en el primer ingreso. */
@@ -52,37 +56,71 @@ export function HomeCompradorPage() {
 
   if (!usuario) return null
 
+  const enVivo = subastas?.filter((s) => s.estado === 'EN_CURSO') ?? []
+  const proximas = subastas?.filter((s) => s.estado !== 'EN_CURSO') ?? []
+
   return (
     <>
-      <h1>
-        Hola, {usuario.nombre} <span className="etiqueta etiqueta--rol-comprador">{etiquetaRol(usuario.rol)}</span>
-      </h1>
-      <p className="subtitulo">Estas son las subastas disponibles.</p>
+      <section className="hero">
+        <div className="hero__fondo" aria-hidden="true">
+          <PortadaLote semilla={`hero-${usuario.id}`} />
+        </div>
+        <p className="sobretitulo">Hola, {usuario.nombre}</p>
+        <h1 className="hero__titulo">
+          Café de origen, <em>puja en vivo</em>
+        </h1>
+        <p className="subtitulo">Estas son las subastas disponibles.</p>
+      </section>
 
-      {error && (
-        <p className="campo__error" role="alert">
-          {error}
-        </p>
+      {error && <EstadoError titulo="No pudimos cargar las subastas" mensaje={error} />}
+      {!error && subastas === null && <CargandoLotes texto="Cargando subastas…" />}
+      {subastas?.length === 0 && (
+        <EstadoVacio
+          icono={Coffee}
+          titulo="No hay subastas disponibles por ahora"
+          texto="Los caficultores programan nuevos lotes con frecuencia. Vuelve pronto para no perderte la próxima."
+        />
       )}
-      {!error && subastas === null && <p className="vacio">Cargando subastas…</p>}
-      {subastas?.length === 0 && <p className="vacio">No hay subastas disponibles por ahora</p>}
 
-      <ul className="lista">
-        {subastas?.map((s) => (
-          <li key={s.id} className="tarjeta tarjeta--fila">
-            <div>
-              <h2 className="tarjeta__titulo">{s.nombre}</h2>
-              <p className="tarjeta__texto">
-                <EtiquetaEstado estado={s.estado} /> · {formatFechaHora(s.fechaInicio)} · por {s.subastadorNombre}
-                {s.precioActual !== null && <> · desde {formatOrbes(s.precioActual)}</>}
-              </p>
-            </div>
-            <Link to={rutas.sala(s.id)} className="boton boton--primario">
-              Entrar
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {enVivo.length > 0 && (
+        <section className="seccion" aria-labelledby="titulo-en-vivo">
+          <h2 id="titulo-en-vivo" className="seccion__titulo">
+            <EnVivo />
+            Subastando ahora
+            <span className="seccion__cuenta">{enVivo.length}</span>
+          </h2>
+          <ul className="rejilla-lotes">
+            {enVivo.map((s) => (
+              <TarjetaLote key={s.id} subasta={s}>
+                <Link to={rutas.sala(s.id)} className="boton boton--primario">
+                  Entrar
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </TarjetaLote>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {proximas.length > 0 && (
+        <section className="seccion" aria-labelledby="titulo-proximas">
+          <h2 id="titulo-proximas" className="seccion__titulo">
+            <CalendarClock aria-hidden="true" />
+            Próximas subastas
+            <span className="seccion__cuenta">{proximas.length}</span>
+          </h2>
+          <ul className="rejilla-lotes">
+            {proximas.map((s) => (
+              <TarjetaLote key={s.id} subasta={s}>
+                <Link to={rutas.sala(s.id)} className="boton boton--secundario">
+                  Entrar
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </TarjetaLote>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   )
 }

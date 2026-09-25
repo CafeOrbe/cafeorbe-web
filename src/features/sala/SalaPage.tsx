@@ -1,9 +1,14 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
-import { formatFechaHora, formatOrbes } from '../../shared/format'
+import { ArrowLeft, CalendarClock, Gavel, LoaderCircle, Settings2, Users, WifiOff } from 'lucide-react'
+import type { Detalle } from '../../shared/api/types'
+import { formatFechaHora, formatHora, iniciales } from '../../shared/format'
 import { rutaInicio, rutas } from '../../shared/routes'
 import { tokenActual, useSesion } from '../../shared/session'
+import type { EstadoConexion } from '../../shared/ws/salaSocket'
 import { EtiquetaEstado } from '../../shared/ui/EtiquetaEstado'
+import { Esqueleto, EstadoError, EstadoVacio } from '../../shared/ui/Estados'
+import { IconoOrbe, Monto } from '../../shared/ui/Orbe'
 import { IniciarSubastaBoton } from '../subasta/IniciarSubastaBoton'
 import { FichaLoteCard } from './FichaLoteCard'
 import { PanelPuja } from './PanelPuja'
@@ -35,17 +40,15 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
 
   if (estado.errorDeCarga) {
     return (
-      <>
-        <p className="campo__error" role="alert">
-          {estado.errorDeCarga}
-        </p>
+      <EstadoError titulo="No pudimos abrir la sala" mensaje={estado.errorDeCarga}>
         <Link to={rutaInicio(usuario!.rol)} className="boton boton--secundario">
+          <ArrowLeft aria-hidden="true" />
           Volver al home
         </Link>
-      </>
+      </EstadoError>
     )
   }
-  if (estado.cargando || !detalle) return <p className="vacio">Entrando a la sala…</p>
+  if (estado.cargando || !detalle) return <SalaCargando />
 
   // HU-05: una subasta que ya finalizó lleva a los resultados, no a la sala.
   if (detalle.estado === 'FINALIZADA' || detalle.estado === 'DESIERTA') {
@@ -54,39 +57,74 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
 
   return (
     <>
+      <EstadoDeConexion conexion={estado.conexion} />
+
       <div className="encabezado">
-        <div>
+        <div className="encabezado__texto">
+          <p className="sobretitulo">
+            <EtiquetaEstado estado={detalle.estado} />
+            <span>Subasta de {detalle.subastadorNombre}</span>
+          </p>
           <h1>{detalle.nombre}</h1>
           <p className="subtitulo">
-            <EtiquetaEstado estado={detalle.estado} /> · {formatFechaHora(detalle.fechaInicio)} · por {detalle.subastadorNombre}
+            <CalendarClock aria-hidden="true" />
+            {formatFechaHora(detalle.fechaInicio)}
           </p>
         </div>
         <span className="conectados" title="Personas conectadas a la sala">
-          👥 {estado.conectados} conectados
+          <span className="conectados__punto" aria-hidden="true" />
+          <Users aria-hidden="true" />
+          <span>
+            <strong>{estado.conectados}</strong> conectados
+          </span>
         </span>
       </div>
 
-      <div className="sala">
+      <div className={`sala${esSubastador ? '' : ' sala--comprador'}`}>
         <div className="sala__principal">
-          <Suspense fallback={<div className="tarjeta video"><p className="vacio">Cargando video…</p></div>}>
+          <Suspense fallback={<VideoCargando />}>
             <VideoLive subastaId={subastaId} esSubastador={esSubastador} transmitiendo={estado.transmitiendo} />
           </Suspense>
           <FichaLoteCard subasta={detalle} />
         </div>
 
-        <aside className="sala__lateral">
+        <aside className="sala__lateral" aria-label="Puja y actividad">
           {esSubastador ? (
-            <div className="tarjeta">
-              <h2>Control de la subasta</h2>
-              <p className="precio precio--chico">{detalle.precioActual !== null ? formatOrbes(detalle.precioActual) : 'Sin reglas'}</p>
-              {detalle.lider && <p className="lider">Lidera {detalle.lider.nombre}</p>}
+            <section className="tarjeta panel-control">
+              <div className="tarjeta__cabecera">
+                <h2>
+                  <Gavel aria-hidden="true" />
+                  Control de la subasta
+                </h2>
+              </div>
+              <div>
+                <p className="panel-puja__etiqueta">Precio actual</p>
+                <p className="precio precio--chico" aria-live="polite">
+                  {detalle.precioActual !== null ? (
+                    <>
+                      <IconoOrbe />
+                      <span className="precio__valor" key={detalle.precioActual}>
+                        {detalle.precioActual}
+                      </span>
+                    </>
+                  ) : (
+                    'Sin reglas'
+                  )}
+                </p>
+                {detalle.lider && <p className="lider">Lidera {detalle.lider.nombre}</p>}
+              </div>
               <IniciarSubastaBoton subasta={detalle} alIniciar={(d) => dispatch({ tipo: 'DETALLE', detalle: d })} />
-              {detalle.estado === 'PROGRAMADA' && (
-                <Link to={rutas.gestionar(detalle.id)} className="boton boton--secundario boton--ancho">
-                  Configurar ficha y reglas
-                </Link>
-              )}
-            </div>
+              {/* Hallazgo 19: salir de la sala desmonta el video y corta la transmisión a los compradores. */}
+              {detalle.estado === 'PROGRAMADA' &&
+                (estado.transmitiendo ? (
+                  <p className="campo__ayuda">Detén la transmisión para configurar la ficha y las reglas.</p>
+                ) : (
+                  <Link to={rutas.gestionar(detalle.id)} className="boton boton--secundario boton--ancho">
+                    <Settings2 aria-hidden="true" />
+                    Configurar ficha y reglas
+                  </Link>
+                ))}
+            </section>
           ) : (
             <PanelPuja
               subasta={detalle}
@@ -98,23 +136,100 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
             />
           )}
 
-          <div className="tarjeta">
-            <h2>Últimas pujas</h2>
-            {detalle.ultimasPujas.length === 0 ? (
-              <p className="vacio">Todavía no hay pujas.</p>
-            ) : (
-              <ol className="pujas">
-                {detalle.ultimasPujas.map((p) => (
-                  <li key={p.id}>
-                    <span>{p.usuarioNombre}</span>
-                    <strong>{formatOrbes(p.monto)}</strong>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
+          <FeedPujas detalle={detalle} usuarioId={usuarioId} />
         </aside>
       </div>
     </>
+  )
+}
+
+/** Banner visible cuando el WebSocket de la sala no está abierto (conectando o reconectando). */
+function EstadoDeConexion({ conexion }: { conexion: EstadoConexion }) {
+  if (conexion === 'abierta') return null
+  const caida = conexion === 'cerrada'
+  return (
+    <div className={`conexion${caida ? ' conexion--caida' : ''}`} role="status">
+      {caida ? <WifiOff aria-hidden="true" /> : <LoaderCircle className="conexion__giro" aria-hidden="true" />}
+      <span>
+        {caida
+          ? 'Se perdió la conexión con la sala. Reconectando… las pujas se sincronizan al volver.'
+          : 'Conectando con la sala en vivo…'}
+      </span>
+    </div>
+  )
+}
+
+function FeedPujas({ detalle, usuarioId }: { detalle: Detalle; usuarioId: string }) {
+  return (
+    <section className="tarjeta" aria-labelledby="titulo-pujas">
+      <div className="tarjeta__cabecera">
+        <h2 id="titulo-pujas">Últimas pujas</h2>
+        <span className="etiqueta tabular">{detalle.cantidadPujas} pujas</span>
+      </div>
+      {detalle.ultimasPujas.length === 0 && (
+        <EstadoVacio compacto icono={Gavel} titulo="Todavía no hay pujas." texto="La primera puja marca el ritmo de la subasta." />
+      )}
+      <ol className="pujas" aria-live="polite" aria-relevant="additions">
+        {detalle.ultimasPujas.map((p, i) => {
+          const mia = p.usuarioId === usuarioId
+          return (
+            <li key={p.id} className={`puja${i === 0 ? ' puja--lider' : ''}${mia ? ' puja--mia' : ''}`}>
+              <span className="avatar avatar--chico" aria-hidden="true">
+                {iniciales(p.usuarioNombre)}
+              </span>
+              <span className="puja__quien">
+                <span className="puja__nombre">
+                  {p.usuarioNombre}
+                  {mia && ' (tú)'}
+                </span>
+                <time className="puja__hora" dateTime={p.creadaEn}>
+                  {formatHora(p.creadaEn)}
+                </time>
+              </span>
+              <span className="puja__monto">
+                <Monto cantidad={p.monto} />
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
+function VideoCargando() {
+  return (
+    <div className="tarjeta video" role="status">
+      <div className="video__marco">
+        <p className="video__mensaje">
+          <LoaderCircle className="conexion__giro" aria-hidden="true" />
+          Cargando video…
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function SalaCargando() {
+  return (
+    <div role="status">
+      <span className="solo-lectores">Entrando a la sala…</span>
+      <div className="encabezado" aria-hidden="true">
+        <div className="encabezado__texto">
+          <Esqueleto ancho="12rem" alto="1.2rem" />
+          <Esqueleto ancho="min(28rem, 80vw)" alto="2.6rem" />
+        </div>
+      </div>
+      <div className="sala" aria-hidden="true" style={{ marginTop: '1.5rem' }}>
+        <div className="sala__principal">
+          <Esqueleto alto="auto" className="esqueleto--video" />
+          <Esqueleto alto="10rem" />
+        </div>
+        <div className="sala__lateral">
+          <Esqueleto alto="14rem" />
+          <Esqueleto alto="12rem" />
+        </div>
+      </div>
+    </div>
   )
 }

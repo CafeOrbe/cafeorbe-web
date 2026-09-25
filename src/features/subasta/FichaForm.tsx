@@ -4,7 +4,9 @@ import { ApiError } from '../../shared/api/client'
 import type { Detalle } from '../../shared/api/types'
 import { useAvisos } from '../../shared/ui/Avisos'
 import { Campo } from '../../shared/ui/Campo'
-import { hayErrores, validarFicha, type Errores } from '../../shared/validators'
+import { Alerta } from '../../shared/ui/Estados'
+import { Check, Coffee, Lock } from 'lucide-react'
+import { hayErrores, MAX_OBSERVACIONES, MAX_TEXTO_FICHA, validarFicha, type Errores } from '../../shared/validators'
 
 /** HU-09: ficha técnica del lote. Se puede editar solo mientras la subasta está Programada. */
 export function FichaForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar: (d: Detalle) => void }) {
@@ -15,7 +17,7 @@ export function FichaForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar:
   const [pesoKg, setPesoKg] = useState(f ? String(f.pesoKg) : '')
   const [edadMeses, setEdadMeses] = useState(f ? String(f.edadMeses) : '')
   const [observaciones, setObservaciones] = useState(f?.observaciones ?? '')
-  const [errores, setErrores] = useState<Errores<'identificacion' | 'tipoCafe' | 'pesoKg' | 'edadMeses'>>({})
+  const [errores, setErrores] = useState<Errores<'identificacion' | 'tipoCafe' | 'pesoKg' | 'edadMeses' | 'observaciones'>>({})
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const bloqueada = subasta.estado !== 'PROGRAMADA'
@@ -48,15 +50,23 @@ export function FichaForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar:
 
   return (
     <form className="tarjeta formulario" onSubmit={guardar} noValidate>
-      <h2>Ficha técnica del lote</h2>
-      {bloqueada && <p className="aviso-fijo">La ficha no se puede editar con la subasta iniciada</p>}
+      <div className="formulario__cabecera">
+        <span className="tarjeta__icono" aria-hidden="true">
+          <Coffee />
+        </span>
+        <div>
+          <h2>Ficha técnica del lote</h2>
+          <p>Lo que verán los compradores en la sala: identifica el lote y describe su café.</p>
+        </div>
+      </div>
+      {bloqueada && <p className="aviso-fijo"><Lock aria-hidden="true" />La ficha no se puede editar con la subasta iniciada</p>}
       <fieldset disabled={bloqueada || enviando} className="sin-borde">
         <div className="formulario__doble">
           <Campo etiqueta="Identificación" error={errores.identificacion}>
-            <input type="text" value={identificacion} onChange={(e) => setIdentificacion(e.target.value)} />
+            <input type="text" maxLength={MAX_TEXTO_FICHA} value={identificacion} onChange={(e) => setIdentificacion(e.target.value)} />
           </Campo>
           <Campo etiqueta="Tipo de café" error={errores.tipoCafe}>
-            <input type="text" value={tipoCafe} onChange={(e) => setTipoCafe(e.target.value)} />
+            <input type="text" maxLength={MAX_TEXTO_FICHA} value={tipoCafe} onChange={(e) => setTipoCafe(e.target.value)} />
           </Campo>
           <Campo etiqueta="Peso (kg)" error={errores.pesoKg}>
             <input type="number" inputMode="decimal" min="0" step="0.1" value={pesoKg} onChange={(e) => setPesoKg(e.target.value)} />
@@ -65,16 +75,13 @@ export function FichaForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar:
             <input type="number" inputMode="numeric" min="0" step="1" value={edadMeses} onChange={(e) => setEdadMeses(e.target.value)} />
           </Campo>
         </div>
-        <Campo etiqueta="Observaciones (opcional)">
-          <textarea rows={3} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} />
+        <Campo etiqueta="Observaciones (opcional)" error={errores.observaciones}>
+          <textarea rows={3} maxLength={MAX_OBSERVACIONES} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} />
         </Campo>
-        {errorGeneral && (
-          <p className="campo__error" role="alert">
-            {errorGeneral}
-          </p>
-        )}
+        {errorGeneral && <Alerta>{errorGeneral}</Alerta>}
         <div className="acciones">
           <button type="submit" className="boton boton--primario">
+            <Check aria-hidden="true" />
             {enviando ? 'Guardando…' : 'Guardar ficha'}
           </button>
         </div>

@@ -3,6 +3,11 @@
 export const MSG_NOMBRE_OBLIGATORIO = 'El nombre es obligatorio'
 export const MSG_FECHA_FUTURA = 'La fecha de inicio debe ser futura'
 export const MSG_VALORES_POSITIVOS = 'Los valores deben ser mayores que cero'
+export const MSG_ENTERO = 'Debe ser un número entero'
+
+/** Límites de la ficha: los mismos de la base de datos y del backend (hallazgo 1). */
+export const MAX_TEXTO_FICHA = 100
+export const MAX_OBSERVACIONES = 1000
 
 export type Errores<T extends string> = Partial<Record<T, string>>
 
@@ -38,9 +43,18 @@ export function validarReglas(datos: {
   incrementoMinimo: string
 }): Errores<'duracionMinutos' | 'precioBase' | 'incrementoMinimo'> {
   const errores: Errores<'duracionMinutos' | 'precioBase' | 'incrementoMinimo'> = {}
-  if (numeroPositivo(datos.duracionMinutos) === null) errores.duracionMinutos = MSG_VALORES_POSITIVOS
-  if (numeroPositivo(datos.precioBase) === null) errores.precioBase = MSG_VALORES_POSITIVOS
-  if (numeroPositivo(datos.incrementoMinimo) === null) errores.incrementoMinimo = MSG_VALORES_POSITIVOS
+  // Hallazgo 2: el backend espera enteros; un decimal como 1.5 ya no se trunca en silencio.
+  const revisar = (texto: string) => {
+    const n = numeroPositivo(texto)
+    if (n === null) return MSG_VALORES_POSITIVOS
+    return Number.isInteger(n) ? null : MSG_ENTERO
+  }
+  const duracion = revisar(datos.duracionMinutos)
+  const precio = revisar(datos.precioBase)
+  const incremento = revisar(datos.incrementoMinimo)
+  if (duracion) errores.duracionMinutos = duracion
+  if (precio) errores.precioBase = precio
+  if (incremento) errores.incrementoMinimo = incremento
   return errores
 }
 

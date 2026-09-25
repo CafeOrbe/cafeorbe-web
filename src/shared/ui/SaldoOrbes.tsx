@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api/endpoints'
 import { formatOrbes } from '../format'
+import { IconoOrbe } from './Orbe'
 
 const EVENTO = 'cafeorbe:saldo-cambio'
 
@@ -31,7 +32,9 @@ export function SaldoOrbes() {
   }, [])
 
   return (
-    <span className="saldo" aria-label="Saldo de Orbes" title="Tu saldo de Orbes">
+    <span className="saldo" title="Tu saldo de Orbes">
+      <IconoOrbe />
+      <span className="solo-lectores">Saldo: </span>
       {saldo === null ? '— Orbes' : formatOrbes(saldo)}
     </span>
   )

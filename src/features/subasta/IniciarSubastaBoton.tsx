@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Play } from 'lucide-react'
 import { api } from '../../shared/api/endpoints'
 import type { Detalle } from '../../shared/api/types'
 import { useAvisos } from '../../shared/ui/Avisos'
@@ -28,6 +29,7 @@ export function IniciarSubastaBoton({ subasta, alIniciar }: { subasta: Detalle; 
   return (
     <div className="iniciar">
       <button type="button" className="boton boton--primario boton--grande" disabled={sinConfiguracion || enviando} onClick={iniciar}>
+        <Play aria-hidden="true" />
         {enviando ? 'Iniciando…' : 'Iniciar subasta'}
       </button>
       {sinConfiguracion && <p className="campo__ayuda">{MSG_FALTA_CONFIGURACION}</p>}

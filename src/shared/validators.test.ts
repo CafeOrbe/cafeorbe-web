@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MSG_FECHA_FUTURA,
   MSG_NOMBRE_OBLIGATORIO,
+  MSG_ENTERO,
   MSG_VALORES_POSITIVOS,
   numeroPositivo,
   validarCrearSubasta,
@@ -57,6 +58,14 @@ describe('HU-10 · validarReglas', () => {
 
   it('acepta duración 10, precio base 100 e incremento 10', () => {
     expect(validarReglas({ duracionMinutos: '10', precioBase: '100', incrementoMinimo: '10' })).toEqual({})
+  })
+
+  it('rechaza decimales en lugar de truncarlos (hallazgo 2)', () => {
+    expect(validarReglas({ duracionMinutos: '1.5', precioBase: '0.5', incrementoMinimo: '10' })).toEqual({
+      duracionMinutos: MSG_ENTERO,
+      precioBase: MSG_ENTERO,
+    })
+    expect(validarReglas({ duracionMinutos: '1.0', precioBase: '100', incrementoMinimo: '10' })).toEqual({})
   })
 
   it('numeroPositivo solo devuelve números mayores que cero', () => {

@@ -4,6 +4,8 @@ import { ApiError } from '../../shared/api/client'
 import type { Detalle } from '../../shared/api/types'
 import { useAvisos } from '../../shared/ui/Avisos'
 import { Campo } from '../../shared/ui/Campo'
+import { Alerta } from '../../shared/ui/Estados'
+import { Check, Timer, Lock } from 'lucide-react'
 import { hayErrores, validarReglas, type Errores } from '../../shared/validators'
 
 /** HU-10: duración, precio base e incremento mínimo. Solo valores numéricos positivos. */
@@ -44,8 +46,16 @@ export function ReglasForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar
 
   return (
     <form className="tarjeta formulario" onSubmit={guardar} noValidate>
-      <h2>Tiempo y reglas de puja</h2>
-      {bloqueada && <p className="aviso-fijo">Las reglas no se pueden cambiar con la subasta iniciada</p>}
+      <div className="formulario__cabecera">
+        <span className="tarjeta__icono" aria-hidden="true">
+          <Timer />
+        </span>
+        <div>
+          <h2>Tiempo y reglas de puja</h2>
+          <p>Cuánto dura la subasta, desde cuánto arranca y cuánto sube cada puja, en Orbes.</p>
+        </div>
+      </div>
+      {bloqueada && <p className="aviso-fijo"><Lock aria-hidden="true" />Las reglas no se pueden cambiar con la subasta iniciada</p>}
       <fieldset disabled={bloqueada || enviando} className="sin-borde">
         <div className="formulario__triple">
           <Campo etiqueta="Duración (minutos)" error={errores.duracionMinutos}>
@@ -58,13 +68,10 @@ export function ReglasForm({ subasta, alGuardar }: { subasta: Detalle; alGuardar
             <input type="number" inputMode="numeric" min="1" step="1" value={incremento} onChange={(e) => setIncremento(e.target.value)} />
           </Campo>
         </div>
-        {errorGeneral && (
-          <p className="campo__error" role="alert">
-            {errorGeneral}
-          </p>
-        )}
+        {errorGeneral && <Alerta>{errorGeneral}</Alerta>}
         <div className="acciones">
           <button type="submit" className="boton boton--primario">
+            <Check aria-hidden="true" />
             {enviando ? 'Guardando…' : 'Guardar reglas'}
           </button>
         </div>
