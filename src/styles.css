@@ -2586,3 +2586,111 @@ svg {
   width: 0.8rem;
   height: 0.8rem;
 }
+
+/* ── Sprint 2 · Temporizador (HU-17), tiempo extendido (HU-18) y anuncio de cierre (HU-21) ── */
+.sala__indicadores {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.temporizador {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.95rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-pill);
+  background: var(--superficie);
+  box-shadow: var(--sombra-1);
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background var(--medio) var(--curva), color var(--medio) var(--curva), border-color var(--medio) var(--curva);
+}
+.temporizador svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--tinta-suave);
+}
+.temporizador__valor {
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+}
+/* Último minuto: cambia de color como alerta. */
+.temporizador--alerta {
+  background: var(--cereza-suave);
+  border-color: var(--cereza);
+  color: var(--cereza-tinta);
+  animation: pulso-punto 1s ease-in-out infinite;
+}
+.temporizador--alerta svg {
+  color: var(--cereza-tinta);
+}
+
+.conexion--extension {
+  background: var(--oro-suave);
+  color: var(--oro-tinta);
+  border: 1px solid var(--oro-borde);
+}
+
+.anuncio {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: oklch(13% 0.02 45 / 62%);
+  animation: aviso-entra var(--medio) var(--curva);
+}
+.anuncio__tarjeta {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  width: min(100%, 30rem);
+  padding: 2rem 1.5rem;
+  border-radius: var(--radio-lg);
+  border: 1px solid var(--oro-borde);
+  background: var(--superficie);
+  box-shadow: var(--sombra-2);
+  text-align: center;
+}
+.anuncio__tarjeta--desierta {
+  border-color: var(--borde-fuerte);
+}
+.anuncio__tarjeta h2 {
+  margin: 0;
+  font-family: var(--fuente-display);
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  line-height: 1.15;
+}
+.anuncio__icono {
+  display: grid;
+  place-items: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background: var(--oro-suave);
+  color: var(--oro-tinta);
+}
+.anuncio__tarjeta--desierta .anuncio__icono {
+  background: var(--superficie-2);
+  color: var(--tinta-suave);
+}
+.anuncio__icono svg {
+  width: 2rem;
+  height: 2rem;
+}
+.anuncio__monto {
+  margin: 0;
+  color: var(--tinta-suave);
+  font-size: 1.05rem;
+}
+.anuncio__monto strong {
+  color: var(--tinta);
+}
+.acciones--centradas {
+  justify-content: center;
+  margin-top: 0.5rem;
+}

@@ -1,5 +1,21 @@
-import type { Detalle, Puja } from '../../shared/api/types'
+import type { Detalle, EstadoSubasta, Puja } from '../../shared/api/types'
 import type { EstadoConexion, MensajeSala } from '../../shared/ws/salaSocket'
+
+/** Cierre de la subasta recibido en vivo: lo que anuncia la sala a todos los conectados (HU-21). */
+export interface Cierre {
+  estado: EstadoSubasta
+  ganadorId: string | null
+  ganadorNombre: string | null
+  montoFinal: number | null
+  cantidadPujas: number
+}
+
+/** Extensión de tiempo por una puja al final (HU-18). */
+export interface Extension {
+  segundos: number
+  numero: number
+  maximo: number
+}
 
 export interface SalaEstado {
   cargando: boolean
@@ -10,6 +26,12 @@ export interface SalaEstado {
   /** Mensaje transitorio: motivo del rechazo de mi puja u otro error de la sala. */
   aviso: string | null
   conexion: EstadoConexion
+  /** Reloj del servidor menos reloj del navegador, en ms: con él se calcula el temporizador (HU-17). */
+  desfaseMs: number
+  /** Aviso transitorio de "Tiempo extendido". */
+  extension: Extension | null
+  /** Presente solo si la subasta cerró mientras esta sala estaba abierta. */
+  cierre: Cierre | null
 }
 
 export const estadoInicial: SalaEstado = {
@@ -20,15 +42,19 @@ export const estadoInicial: SalaEstado = {
   transmitiendo: false,
   aviso: null,
   conexion: 'conectando',
+  desfaseMs: 0,
+  extension: null,
+  cierre: null,
 }
 
 export type Accion =
-  | { tipo: 'DETALLE'; detalle: Detalle }
+  | { tipo: 'DETALLE'; detalle: Detalle; desfaseMs?: number }
   | { tipo: 'ERROR_DE_CARGA'; mensaje: string }
   | { tipo: 'CONEXION'; estado: EstadoConexion }
   | { tipo: 'TRANSMISION'; activa: boolean }
   | { tipo: 'MENSAJE'; mensaje: MensajeSala }
   | { tipo: 'LIMPIAR_AVISO' }
+  | { tipo: 'LIMPIAR_EXTENSION' }
 
 const MAX_PUJAS_VISIBLES = 10
 
@@ -36,7 +62,13 @@ const MAX_PUJAS_VISIBLES = 10
 export function salaReducer(estado: SalaEstado, accion: Accion): SalaEstado {
   switch (accion.tipo) {
     case 'DETALLE':
-      return { ...estado, cargando: false, errorDeCarga: null, detalle: accion.detalle }
+      return {
+        ...estado,
+        cargando: false,
+        errorDeCarga: null,
+        detalle: accion.detalle,
+        desfaseMs: accion.desfaseMs ?? estado.desfaseMs,
+      }
     case 'ERROR_DE_CARGA':
       return { ...estado, cargando: false, errorDeCarga: accion.mensaje }
     case 'CONEXION':
@@ -45,6 +77,8 @@ export function salaReducer(estado: SalaEstado, accion: Accion): SalaEstado {
       return { ...estado, transmitiendo: accion.activa }
     case 'LIMPIAR_AVISO':
       return { ...estado, aviso: null }
+    case 'LIMPIAR_EXTENSION':
+      return { ...estado, extension: null }
     case 'MENSAJE':
       return aplicarMensaje(estado, accion.mensaje)
   }
@@ -101,6 +135,30 @@ function aplicarMensaje(estado: SalaEstado, mensaje: MensajeSala): SalaEstado {
             : [nueva, ...estado.detalle.ultimasPujas].slice(0, MAX_PUJAS_VISIBLES),
         },
       }
+    }
+
+    // HU-18: el temporizador toma la nueva hora de fin y la sala muestra el aviso.
+    case 'TIEMPO_EXTENDIDO': {
+      if (!estado.detalle) return estado
+      const numero = Number(d.extension)
+      return {
+        ...estado,
+        extension: { segundos: Number(d.segundosExtendidos), numero, maximo: Number(d.maximoExtensiones) },
+        detalle: { ...estado.detalle, horaFin: String(d.horaFin), extensiones: numero },
+      }
+    }
+
+    // HU-19 y HU-21: la sala pasa al estado final sin recargar y guarda lo que hay que anunciar.
+    case 'SUBASTA_CERRADA': {
+      if (!estado.detalle) return estado
+      const cierre: Cierre = {
+        estado: d.estado === 'DESIERTA' ? 'DESIERTA' : 'FINALIZADA',
+        ganadorId: d.ganadorId == null ? null : String(d.ganadorId),
+        ganadorNombre: d.ganadorNombre == null ? null : String(d.ganadorNombre),
+        montoFinal: d.montoFinal == null ? null : Number(d.montoFinal),
+        cantidadPujas: Number(d.cantidadPujas),
+      }
+      return { ...estado, aviso: null, extension: null, cierre, detalle: { ...estado.detalle, estado: cierre.estado } }
     }
 
     // Solo llega a quien pujó (PujaRechazada) o al que envió un mensaje inválido (ERROR).
