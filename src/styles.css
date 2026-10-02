@@ -1134,6 +1134,11 @@ svg {
   color: var(--ambar-tinta);
 }
 
+/* Desierta: cerró sin pujas. Tono neutro, para distinguirla de una subasta con ganador. */
+.etiqueta--estado-desierta {
+  background: var(--superficie-2);
+  color: var(--tinta-suave);
+}
 .etiqueta--estado-finalizada {
   background: var(--hoja-suave);
   color: var(--hoja-tinta);

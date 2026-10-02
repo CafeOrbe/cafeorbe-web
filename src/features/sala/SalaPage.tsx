@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { AlarmClockPlus, ArrowLeft, CalendarClock, CircleOff, Gavel, LoaderCircle, Settings2, Trophy, Users, WifiOff } from 'lucide-react'
 import type { Detalle } from '../../shared/api/types'
@@ -29,9 +29,24 @@ export function SalaPage() {
 }
 
 function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string; token: string; usuarioId: string; esSubastador: boolean }) {
-  const { estado, pujar, limpiarAviso, limpiarExtension, dispatch } = useSala(subastaId, token)
+  const { estado, pujar, recargar, limpiarAviso, limpiarExtension, dispatch } = useSala(subastaId, token)
   const { detalle } = estado
   const { usuario } = useSesion()
+  const [anuncioCerrado, setAnuncioCerrado] = useState(false)
+  const cerrarAnuncio = useCallback(() => setAnuncioCerrado(true), [])
+
+  // HU-19: el cierre llega como evento. Si se pierde (la conexión cayó justo al final), la sala no debe quedarse
+  // en 00:00 para siempre: pasada la hora de fin se consulta al servidor hasta que la subasta deje de estar en curso.
+  const enCurso = detalle?.estado === 'EN_CURSO'
+  const horaFin = detalle?.horaFin ?? null
+  useEffect(() => {
+    if (!enCurso || !horaFin) return
+    const finEnMiReloj = Date.parse(horaFin) - estado.desfaseMs
+    const t = window.setInterval(() => {
+      if (Date.now() >= finEnMiReloj + 2500) void recargar()
+    }, 3000)
+    return () => window.clearInterval(t)
+  }, [enCurso, horaFin, estado.desfaseMs, recargar])
 
   // HU-18: el aviso de tiempo extendido se retira solo.
   useEffect(() => {
@@ -164,8 +179,14 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
         </aside>
       </div>
 
-      {estado.cierre && (
-        <AnuncioDeCierre cierre={estado.cierre} subastaId={subastaId} usuarioId={usuarioId} inicio={rutaInicio(usuario!.rol)} />
+      {estado.cierre && !anuncioCerrado && (
+        <AnuncioDeCierre
+          cierre={estado.cierre}
+          subastaId={subastaId}
+          usuarioId={usuarioId}
+          inicio={rutaInicio(usuario!.rol)}
+          alCerrar={cerrarAnuncio}
+        />
       )}
     </>
   )
@@ -175,9 +196,33 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
  * HU-21: anuncio que ven todos los conectados cuando la subasta cierra, con ganador o desierta.
  * No hay notificaciones externas: el anuncio vive en la sala.
  */
-function AnuncioDeCierre({ cierre, subastaId, usuarioId, inicio }: { cierre: Cierre; subastaId: string; usuarioId: string; inicio: string }) {
+function AnuncioDeCierre({
+  cierre,
+  subastaId,
+  usuarioId,
+  inicio,
+  alCerrar,
+}: {
+  cierre: Cierre
+  subastaId: string
+  usuarioId: string
+  inicio: string
+  alCerrar: () => void
+}) {
   const desierta = cierre.estado === 'DESIERTA' || cierre.ganadorNombre === null
   const gane = !desierta && cierre.ganadorId === usuarioId
+  const principal = useRef<HTMLAnchorElement>(null)
+
+  // El anuncio toma el foco al aparecer y se puede cerrar con Escape para ver el estado final de la sala.
+  useEffect(() => {
+    principal.current?.focus()
+    const alPulsar = (evento: KeyboardEvent) => {
+      if (evento.key === 'Escape') alCerrar()
+    }
+    window.addEventListener('keydown', alPulsar)
+    return () => window.removeEventListener('keydown', alPulsar)
+  }, [alCerrar])
+
   return (
     <div className="anuncio" role="dialog" aria-modal="true" aria-labelledby="titulo-anuncio">
       <div className={`anuncio__tarjeta${desierta ? ' anuncio__tarjeta--desierta' : ''}`}>
@@ -196,13 +241,16 @@ function AnuncioDeCierre({ cierre, subastaId, usuarioId, inicio }: { cierre: Cie
           </>
         )}
         <div className="acciones acciones--centradas">
-          <Link to={rutas.resultados(subastaId)} className="boton boton--primario" autoFocus>
+          <Link to={rutas.resultados(subastaId)} className="boton boton--primario" ref={principal}>
             Ver resultados
           </Link>
           <Link to={inicio} className="boton boton--secundario">
             Volver al home
           </Link>
         </div>
+        <button type="button" className="boton boton--fantasma boton--chico" onClick={alCerrar}>
+          Seguir en la sala
+        </button>
       </div>
     </div>
   )

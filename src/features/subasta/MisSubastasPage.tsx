@@ -57,10 +57,17 @@ export function MisSubastasPage() {
                   Configurar
                 </Link>
               )}
-              <Link to={rutas.sala(s.id)} className="boton boton--primario boton--chico">
-                Ir a la sala
-                <ArrowRight aria-hidden="true" />
-              </Link>
+              {s.estado === 'FINALIZADA' || s.estado === 'DESIERTA' ? (
+                <Link to={rutas.resultados(s.id)} className="boton boton--secundario boton--chico">
+                  Ver resultados
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              ) : (
+                <Link to={rutas.sala(s.id)} className="boton boton--primario boton--chico">
+                  Ir a la sala
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              )}
             </TarjetaLote>
           ))}
         </ul>

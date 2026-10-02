@@ -1,10 +1,18 @@
 import type { ReactNode } from 'react'
 import { CalendarClock, Gavel, User } from 'lucide-react'
-import type { Resumen } from '../api/types'
+import type { EstadoSubasta, Resumen } from '../api/types'
 import { formatFechaHora } from '../format'
 import { EnVivo, EtiquetaEstado } from './EtiquetaEstado'
 import { Monto } from './Orbe'
 import { PortadaLote } from './PortadaLote'
+
+/** Qué significa el precio de la tarjeta según el estado: una subasta cerrada ya no parte "desde" un precio. */
+const ETIQUETA_DEL_PRECIO: Record<EstadoSubasta, string> = {
+  PROGRAMADA: 'Desde',
+  EN_CURSO: 'Precio actual',
+  FINALIZADA: 'Monto final',
+  DESIERTA: 'Precio base',
+}
 
 /** Tarjeta de una subasta en los listados: portada grande, estado, precio y acciones. */
 export function TarjetaLote({ subasta, mostrarSubastador = true, children }: { subasta: Resumen; mostrarSubastador?: boolean; children: ReactNode }) {
@@ -41,7 +49,7 @@ export function TarjetaLote({ subasta, mostrarSubastador = true, children }: { s
           <div className="lote__precio">
             {subasta.precioActual !== null ? (
               <>
-                <span className="lote__precio-etiqueta">{enVivo ? 'Precio actual' : 'Desde'}</span>
+                <span className="lote__precio-etiqueta">{ETIQUETA_DEL_PRECIO[subasta.estado]}</span>
                 <Monto cantidad={subasta.precioActual} grande />
               </>
             ) : (
