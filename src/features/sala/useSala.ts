@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { api } from '../../shared/api/endpoints'
+import { ApiError } from '../../shared/api/client'
 import { SalaSocket } from '../../shared/ws/salaSocket'
 import { estadoInicial, salaReducer } from './salaReducer'
 
 /**
- * Estado en vivo de una sala. Abre el WebSocket y, cada vez que se conecta (o se reconecta), vuelve a pedir
- * el detalle por REST: así no se pierde ninguna puja ocurrida mientras la conexión estaba caída.
+ * Estado en vivo de una sala. Carga el detalle por REST al entrar y abre el WebSocket; cada vez que este se
+ * conecta (o se reconecta) vuelve a pedir el detalle: así no se pierde ninguna puja ocurrida mientras la
+ * conexión estaba caída.
  */
 export function useSala(subastaId: string, token: string) {
   const [estado, dispatch] = useReducer(salaReducer, estadoInicial)
@@ -20,11 +22,16 @@ export function useSala(subastaId: string, token: string) {
       dispatch({ tipo: 'DETALLE', detalle })
       dispatch({ tipo: 'TRANSMISION', activa: transmision.transmitiendo })
     } catch (e) {
+      // La subasta no existe: el realtime-gateway rechaza la conexión, no tiene sentido seguir reintentando.
+      if (e instanceof ApiError && e.status === 404) socket.current?.cerrar()
       dispatch({ tipo: 'ERROR_DE_CARGA', mensaje: e instanceof Error ? e.message : 'No se pudo cargar la sala' })
     }
   }, [subastaId])
 
   useEffect(() => {
+    // HU-05: la sala no espera al WebSocket para mostrar el lote. Si el realtime-gateway no responde o rechaza
+    // la conexión, se ve el lote (o el error) en lugar de quedarse cargando.
+    void recargar()
     const s = new SalaSocket(subastaId, token, {
       mensaje: (mensaje) => {
         dispatch({ tipo: 'MENSAJE', mensaje })

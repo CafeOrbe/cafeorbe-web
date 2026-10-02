@@ -2,12 +2,11 @@ import { useEffect, useState } from 'react'
 import type { Detalle } from '../../shared/api/types'
 import { formatOrbes } from '../../shared/format'
 import { IconoOrbe } from '../../shared/ui/Orbe'
-import { refrescarSaldo } from '../../shared/ui/SaldoOrbes'
+import { refrescarSaldo, useSaldoConocido } from '../../shared/ui/SaldoOrbes'
 import { CircleAlert, Clock, Crown, Gavel, Trophy, WifiOff } from 'lucide-react'
+import { estadoDelBoton } from './botonPuja'
 
-export const MSG_LIDER = 'Vas ganando'
 export const MSG_SIN_PUJAS = 'Sin pujas'
-export const MSG_TIEMPO_AGOTADO = 'Tiempo agotado'
 
 /**
  * Hallazgo 18: true cuando ya pasó la hora de fin. Mientras no exista el cierre automático (HU-19) la subasta
@@ -49,6 +48,7 @@ export function PanelPuja({ subasta, usuarioId, conectado, aviso, onPujar, onLim
   const soyLider = subasta.lider?.id === usuarioId
   const monto = subasta.siguienteMinimo
   const tiempoAgotado = useTiempoAgotado(subasta.horaFin)
+  const saldo = useSaldoConocido()
 
   // Un rechazo o una puja aceptada cambian la pantalla: se libera el botón.
   useEffect(() => {
@@ -70,23 +70,15 @@ export function PanelPuja({ subasta, usuarioId, conectado, aviso, onPujar, onLim
     refrescarSaldo()
   }
 
-  let etiquetaBoton: string
-  let deshabilitado = false
-  if (!enCurso) {
-    etiquetaBoton = subasta.estado === 'PROGRAMADA' ? 'La subasta aún no inicia' : 'Subasta cerrada'
-    deshabilitado = true
-  } else if (soyLider) {
-    etiquetaBoton = MSG_LIDER
-    deshabilitado = true
-  } else if (tiempoAgotado) {
-    etiquetaBoton = MSG_TIEMPO_AGOTADO
-    deshabilitado = true
-  } else {
-    etiquetaBoton = `Pujar ${monto}`
-    deshabilitado = !conectado || enviando || monto === null
-  }
-
-  const puedePujar = enCurso && !soyLider && !tiempoAgotado
+  const { etiqueta: etiquetaBoton, deshabilitado, puedePujar } = estadoDelBoton({
+    estado: subasta.estado,
+    soyLider,
+    tiempoAgotado,
+    saldo,
+    monto,
+    conectado,
+    enviando,
+  })
 
   return (
     <section className={`panel-puja${soyLider ? ' panel-puja--lider' : ''}`} aria-label="Panel de puja">

@@ -66,6 +66,16 @@ export function ProveedorSesion({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(EVENTO_EXPIRADA, cerrarSesion)
   }, [cerrarSesion])
 
+  // HU-02: con Atrás el navegador puede restaurar una página anterior tal como quedó (bfcache), con la sesión
+  // todavía en memoria. Si ya se cerró la sesión, esa página también debe volver al acceso.
+  useEffect(() => {
+    const alRestaurar = (evento: PageTransitionEvent) => {
+      if (evento.persisted && !leer()) cerrarSesion()
+    }
+    window.addEventListener('pageshow', alRestaurar)
+    return () => window.removeEventListener('pageshow', alRestaurar)
+  }, [cerrarSesion])
+
   const iniciarSesion = useCallback(async (nombre: string, rol: Rol) => {
     const respuesta = await api.iniciarSesion(nombre, rol)
     const nueva = { token: respuesta.token, usuario: respuesta.usuario }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { api } from '../api/endpoints'
 import { formatOrbes } from '../format'
 import { IconoOrbe } from './Orbe'
@@ -10,16 +10,37 @@ export function refrescarSaldo() {
   window.dispatchEvent(new Event(EVENTO))
 }
 
+// Último saldo consultado, compartido con las pantallas que lo necesitan (el botón de puja, HU-13).
+let saldoConocido: number | null = null
+const suscriptores = new Set<() => void>()
+
+function publicarSaldo(saldo: number | null) {
+  saldoConocido = saldo
+  suscriptores.forEach((avisar) => avisar())
+}
+
+function suscribir(avisar: () => void) {
+  suscriptores.add(avisar)
+  return () => {
+    suscriptores.delete(avisar)
+  }
+}
+
+/** Saldo que muestra la barra superior; null mientras no se conoce. */
+export function useSaldoConocido(): number | null {
+  return useSyncExternalStore(suscribir, () => saldoConocido)
+}
+
 /** Saldo de Orbes del Comprador, visible en la barra superior del home y de la sala (HU-06). */
 export function SaldoOrbes() {
-  const [saldo, setSaldo] = useState<number | null>(null)
+  const saldo = useSaldoConocido()
 
   useEffect(() => {
     let vivo = true
     const consultar = () =>
       api
         .saldo()
-        .then((r) => vivo && setSaldo(Math.max(0, r.saldo)))
+        .then((r) => vivo && publicarSaldo(Math.max(0, r.saldo)))
         .catch(() => undefined)
     consultar()
     const intervalo = window.setInterval(consultar, 8000)
@@ -28,6 +49,8 @@ export function SaldoOrbes() {
       vivo = false
       window.clearInterval(intervalo)
       window.removeEventListener(EVENTO, consultar)
+      // Al cerrar sesión el saldo deja de ser válido: el siguiente usuario no debe ver el del anterior.
+      publicarSaldo(null)
     }
   }, [])
 
