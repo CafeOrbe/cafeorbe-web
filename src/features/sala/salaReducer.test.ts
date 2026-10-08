@@ -76,6 +76,17 @@ describe('salaReducer', () => {
     expect(salaReducer(despues, pujaAceptada(120, 'Ana', 'p1'))).toBe(despues)
   })
 
+  it('HU-24 · ORBES_ABONADOS guarda lo que recibió el Subastador para anunciarlo', () => {
+    expect(conDetalle.abono).toBeNull()
+
+    const despues = salaReducer(conDetalle, {
+      tipo: 'MENSAJE',
+      mensaje: { tipo: 'ORBES_ABONADOS', subastaId: 's1', datos: { subastaId: 's1', usuarioId: 'u-luis', monto: 300, saldo: 300 } },
+    })
+
+    expect(despues.abono).toBe(300)
+  })
+
   it('una puja repetida (mismo id) no se duplica en el historial', () => {
     const una = salaReducer(conDetalle, pujaAceptada(110, 'Ana', 'p1'))
     const repetida = salaReducer(una, pujaAceptada(110, 'Ana', 'p1'))

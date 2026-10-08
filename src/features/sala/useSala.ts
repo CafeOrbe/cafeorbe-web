@@ -62,7 +62,7 @@ export function useSala(subastaId: string, token: string) {
         }
         // HU-20: tras el cierre el saldo del ganador cambia. El aviso del cobro llega solo a él; el cierre llega
         // a todos un instante antes de que wallet cobre, por eso se vuelve a consultar poco después.
-        if (mensaje.tipo === 'ORBES_COBRADOS') refrescarSaldo()
+        if (mensaje.tipo === 'ORBES_COBRADOS' || mensaje.tipo === 'ORBES_ABONADOS') refrescarSaldo()
         if (mensaje.tipo === 'SUBASTA_CERRADA') window.setTimeout(refrescarSaldo, 2000)
       },
       estado: (conexion) => {

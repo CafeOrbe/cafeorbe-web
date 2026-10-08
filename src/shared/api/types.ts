@@ -91,6 +91,22 @@ export interface Resultados {
   cerradaEn: string | null
 }
 
+/** Movimiento de Orbes de una cuenta. En un abono por venta, `referencia` es el id de la subasta. */
+export interface Movimiento {
+  id: string
+  tipo: string
+  monto: number
+  saldoResultante: number
+  referencia: string
+  fecha: string
+}
+
+/** HU-24: lo que el Subastador ha ganado con sus subastas vendidas. */
+export interface Ganancias {
+  total: number
+  ventas: Movimiento[]
+}
+
 export interface Credenciales {
   url: string
   token: string

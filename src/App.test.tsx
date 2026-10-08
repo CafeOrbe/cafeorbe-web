@@ -11,7 +11,14 @@ import { ProveedorAvisos } from './shared/ui/Avisos'
 import { ANA, LUIS, guardarSesion, resumen } from './test/utilidades'
 
 vi.mock('./shared/api/endpoints', () => ({
-  api: { iniciarSesion: vi.fn(), saldo: vi.fn(), subastasDisponibles: vi.fn(), misSubastas: vi.fn(), resultados: vi.fn() },
+  api: {
+    iniciarSesion: vi.fn(),
+    saldo: vi.fn(),
+    ganancias: vi.fn(),
+    subastasDisponibles: vi.fn(),
+    misSubastas: vi.fn(),
+    resultados: vi.fn(),
+  },
 }))
 
 function abrir(ruta: string, usuario: Usuario | null = null) {
@@ -32,6 +39,7 @@ beforeEach(() => {
   vi.mocked(api.saldo).mockResolvedValue({ usuarioId: ANA.id, saldo: 1000 })
   vi.mocked(api.subastasDisponibles).mockResolvedValue([])
   vi.mocked(api.misSubastas).mockResolvedValue([])
+  vi.mocked(api.ganancias).mockResolvedValue({ total: 0, ventas: [] })
 })
 
 describe('App', () => {
@@ -64,8 +72,8 @@ describe('App', () => {
     expect(screen.getByRole('link', { name: /Crear subasta/ }).getAttribute('href')).toBe('/subastador/subastas/nueva')
     expect(screen.getByRole('link', { name: /Mis subastas/ }).getAttribute('href')).toBe('/subastador/subastas')
     expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeTruthy()
-    // El saldo de Orbes es solo del Comprador.
-    expect(screen.queryByTitle('Tu saldo de Orbes')).toBeNull()
+    // HU-24: el Subastador también ve su saldo, que crece con cada venta.
+    expect(screen.getByTitle('Tu saldo de Orbes')).toBeTruthy()
   })
 
   it('HU-03 · un Comprador que abre el home del Subastador vuelve al suyo con "No autorizado"', async () => {

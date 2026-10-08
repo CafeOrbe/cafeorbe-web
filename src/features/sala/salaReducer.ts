@@ -32,6 +32,8 @@ export interface SalaEstado {
   extension: Extension | null
   /** Presente solo si la subasta cerró mientras esta sala estaba abierta. */
   cierre: Cierre | null
+  /** HU-24: Orbes que el Subastador acaba de recibir por esta subasta; null si no hubo abono. */
+  abono: number | null
 }
 
 export const estadoInicial: SalaEstado = {
@@ -45,6 +47,7 @@ export const estadoInicial: SalaEstado = {
   desfaseMs: 0,
   extension: null,
   cierre: null,
+  abono: null,
 }
 
 export type Accion =
@@ -169,6 +172,10 @@ function aplicarMensaje(estado: SalaEstado, mensaje: MensajeSala): SalaEstado {
       }
       return { ...estado, aviso: null, extension: null, cierre, detalle: { ...estado.detalle, estado: cierre.estado } }
     }
+
+    // HU-24: solo llega al Subastador, cuando wallet ya le abonó lo cobrado al ganador.
+    case 'ORBES_ABONADOS':
+      return { ...estado, abono: Number(d.monto) }
 
     // Solo llega a quien pujó (PujaRechazada) o al que envió un mensaje inválido (ERROR).
     case 'PUJA_RECHAZADA':

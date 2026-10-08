@@ -487,6 +487,27 @@ describe('SalaPage · Subastador', () => {
     expect(screen.getByText('Sin reglas')).toBeTruthy()
   })
 
+  it('HU-24 · al cerrar con ganador ve los Orbes que recibió y su saldo se actualiza', async () => {
+    const consultas = vi.fn()
+    window.addEventListener('cafeorbe:saldo-cambio', consultas)
+    await abrir(detalle(), LUIS)
+    recibir('SUBASTA_CERRADA', cierreConGanador)
+    // El abono llega un instante después del cierre, cuando wallet ya cobró al ganador.
+    expect(screen.queryByText(/Recibiste/)).toBeNull()
+
+    recibir('ORBES_ABONADOS', { subastaId: 's1', usuarioId: LUIS.id, monto: 300, saldo: 300 })
+
+    expect(within(screen.getByRole('dialog')).getByRole('status').textContent).toBe('Recibiste 300 Orbes por esta venta.')
+    expect(consultas).toHaveBeenCalledTimes(1)
+    window.removeEventListener('cafeorbe:saldo-cambio', consultas)
+  })
+
+  it('HU-24 · una subasta desierta no anuncia ningún abono', async () => {
+    await abrir(detalle(), LUIS)
+    recibir('SUBASTA_CERRADA', { estado: 'DESIERTA', ganadorId: null, ganadorNombre: null, montoFinal: null, cantidadPujas: 0 })
+    expect(screen.queryByText(/Recibiste/)).toBeNull()
+  })
+
   it('HU-23 · tras el cierre vuelve al home del Subastador', async () => {
     await abrir(detalle(), LUIS)
     recibir('SUBASTA_CERRADA', cierreConGanador)

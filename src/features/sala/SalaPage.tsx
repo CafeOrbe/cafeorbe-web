@@ -182,6 +182,7 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
       {estado.cierre && !anuncioCerrado && (
         <AnuncioDeCierre
           cierre={estado.cierre}
+          abono={estado.abono}
           subastaId={subastaId}
           usuarioId={usuarioId}
           inicio={rutaInicio(usuario!.rol)}
@@ -198,12 +199,15 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
  */
 function AnuncioDeCierre({
   cierre,
+  abono,
   subastaId,
   usuarioId,
   inicio,
   alCerrar,
 }: {
   cierre: Cierre
+  /** HU-24: Orbes que recibió el Subastador por esta venta; llega un instante después del cierre. */
+  abono: number | null
   subastaId: string
   usuarioId: string
   inicio: string
@@ -238,6 +242,11 @@ function AnuncioDeCierre({
             <p className="anuncio__monto">
               Monto final: <strong>{formatOrbes(cierre.montoFinal ?? 0)}</strong>
             </p>
+            {abono !== null && (
+              <p className="anuncio__monto" role="status">
+                Recibiste <strong>{formatOrbes(abono)}</strong> por esta venta.
+              </p>
+            )}
           </>
         )}
         <div className="acciones acciones--centradas">

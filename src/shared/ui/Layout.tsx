@@ -7,7 +7,10 @@ import { useSesion } from '../session'
 import { Marca } from './Marca'
 import { SaldoOrbes } from './SaldoOrbes'
 
-/** Barra superior (nombre, rol, saldo y Cerrar sesión, HU-02) y contenedor de las pantallas autenticadas. */
+/**
+ * Barra superior (nombre, rol, saldo y Cerrar sesión, HU-02) y contenedor de las pantallas autenticadas.
+ * El saldo lo ven los dos roles: el Comprador lo gasta al ganar y el Subastador lo recibe al vender (HU-24).
+ */
 export function Layout({ children }: { children: ReactNode }) {
   const { usuario, cerrarSesion } = useSesion()
   if (!usuario) return null
@@ -23,7 +26,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <Marca />
           </Link>
           <div className="barra__usuario">
-            {usuario.rol === 'COMPRADOR' && <SaldoOrbes />}
+            <SaldoOrbes />
             <span className="usuario">
               <span className="avatar" aria-hidden="true">
                 {iniciales(usuario.nombre)}

@@ -220,17 +220,17 @@ describe('SaldoOrbes', () => {
     expect(screen.getByTitle('Tu saldo de Orbes').textContent).toContain('0 Orbes')
   })
 
-  it('vuelve a consultar cada 8 segundos y tolera un fallo de red', async () => {
+  it('vuelve a consultar cada 30 segundos y tolera un fallo de red', async () => {
     vi.mocked(api.saldo).mockResolvedValueOnce({ usuarioId: 'u-ana', saldo: 1000 })
     render(<SaldoOrbes />)
     await esperarConsulta()
 
     vi.mocked(api.saldo).mockRejectedValueOnce(new Error('sin red'))
-    await act(() => vi.advanceTimersByTimeAsync(8000))
+    await act(() => vi.advanceTimersByTimeAsync(30_000))
     expect(screen.getByTitle('Tu saldo de Orbes').textContent).toContain('1000 Orbes')
 
     vi.mocked(api.saldo).mockResolvedValueOnce({ usuarioId: 'u-ana', saldo: 900 })
-    await act(() => vi.advanceTimersByTimeAsync(8000))
+    await act(() => vi.advanceTimersByTimeAsync(30_000))
     expect(screen.getByTitle('Tu saldo de Orbes').textContent).toContain('900 Orbes')
   })
 

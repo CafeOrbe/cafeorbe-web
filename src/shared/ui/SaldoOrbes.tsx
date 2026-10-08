@@ -4,6 +4,11 @@ import { formatOrbes } from '../format'
 import { IconoOrbe } from './Orbe'
 
 const EVENTO = 'cafeorbe:saldo-cambio'
+/**
+ * Consulta de respaldo. El saldo solo cambia con un cobro o un abono, y ambos llegan como evento a la sala
+ * (refrescarSaldo): consultar cada pocos segundos por cada persona conectada cargaba al servidor sin necesidad.
+ */
+const CONSULTAR_CADA_MS = 30_000
 
 /** Pide al componente de saldo que vuelva a consultar (por ejemplo tras un cobro). */
 export function refrescarSaldo() {
@@ -31,7 +36,7 @@ export function useSaldoConocido(): number | null {
   return useSyncExternalStore(suscribir, () => saldoConocido)
 }
 
-/** Saldo de Orbes del Comprador, visible en la barra superior del home y de la sala (HU-06). */
+/** Saldo de Orbes del usuario, visible en la barra superior del home y de la sala (HU-06, HU-24). */
 export function SaldoOrbes() {
   const saldo = useSaldoConocido()
 
@@ -43,7 +48,7 @@ export function SaldoOrbes() {
         .then((r) => vivo && publicarSaldo(Math.max(0, r.saldo)))
         .catch(() => undefined)
     consultar()
-    const intervalo = window.setInterval(consultar, 8000)
+    const intervalo = window.setInterval(consultar, CONSULTAR_CADA_MS)
     window.addEventListener(EVENTO, consultar)
     return () => {
       vivo = false

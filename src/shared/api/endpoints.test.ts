@@ -17,6 +17,7 @@ describe('api', () => {
 
     api.iniciarSesion('Ana', 'COMPRADOR')
     api.saldo()
+    api.ganancias()
     api.misSubastas()
     api.subastasDisponibles(['PROGRAMADA', 'EN_CURSO'])
     api.detalle('s1')
@@ -33,6 +34,7 @@ describe('api', () => {
     expect(vi.mocked(peticion).mock.calls).toEqual([
       ['POST', '/api/sesion', { nombre: 'Ana', rol: 'COMPRADOR' }],
       ['GET', '/api/orbes/saldo'],
+      ['GET', '/api/orbes/ganancias'],
       ['GET', '/api/subastas/mias'],
       ['GET', '/api/subastas?estado=programada,en_curso'],
       ['GET', '/api/subastas/s1'],

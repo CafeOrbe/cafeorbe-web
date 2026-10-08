@@ -5,6 +5,7 @@ import type {
   EstadoSubasta,
   EstadoTransmision,
   FichaFormulario,
+  Ganancias,
   ReglasFormulario,
   Resultados,
   Resumen,
@@ -18,6 +19,8 @@ export const api = {
 
   // Orbes (HU-06)
   saldo: () => peticion<{ usuarioId: string; saldo: number }>('GET', '/api/orbes/saldo'),
+  /** HU-24: Orbes que el Subastador recibió por sus ventas. */
+  ganancias: () => peticion<Ganancias>('GET', '/api/orbes/ganancias'),
 
   // Subastas (HU-03, HU-04, HU-08 a HU-10, HU-12)
   misSubastas: () => peticion<Resumen[]>('GET', '/api/subastas/mias'),
