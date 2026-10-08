@@ -2,13 +2,28 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Room, RoomEvent, Track, type RemoteTrack } from 'livekit-client'
 import { api } from '../../shared/api/endpoints'
 import { EnVivo } from '../../shared/ui/EtiquetaEstado'
-import { Radio, Square, Video, VideoOff } from 'lucide-react'
+import { LoaderCircle, Radio, Square, Video, VideoOff } from 'lucide-react'
 import { verificarDispositivos } from './dispositivos'
 
 export const MSG_SIN_TRANSMISION = 'La transmisión aún no ha iniciado'
 export const MSG_TRANSMISION_FINALIZADA = 'Transmisión finalizada'
 export const MSG_CAMARA = 'No se pudo acceder a la cámara'
 export const MSG_SIN_MICROFONO = 'No se pudo acceder al micrófono: la transmisión va sin audio'
+export const MSG_RECONECTANDO = 'Reconectando el video…'
+export const MSG_TRANSMISION_CAIDA = 'Se perdió la conexión del video. Pulsa Iniciar transmisión para volver a emitir.'
+
+/** Espera antes de reintentar la conexión del video cuando se cae. */
+const ESPERA_REINTENTO_MS = 2000
+/** Veces que el Subastador intenta volver a emitir solo antes de pedirle que lo haga a mano. */
+const REINTENTOS_DEL_EMISOR = 3
+
+/**
+ * Sala de LiveKit con los ajustes para muchos espectadores: cada navegador recibe solo la calidad que su
+ * reproductor necesita (adaptiveStream) y el emisor deja de enviar las calidades que nadie está viendo (dynacast).
+ */
+function nuevaSala(): Room {
+  return new Room({ adaptiveStream: true, dynacast: true })
+}
 
 interface Props {
   subastaId: string
@@ -26,43 +41,74 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const sala = useRef<Room | null>(null)
   const estuvoEnVivo = useRef(false)
+  const reintentosDelEmisor = useRef(0)
+  /** Cambia cuando el Subastador detiene o sale: una reconexión automática en curso debe abandonar. */
+  const emision = useRef(0)
   const [publicando, setPublicando] = useState(false)
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
+  const [reconectando, setReconectando] = useState(false)
+  /** Cambia cada vez que el comprador debe volver a conectarse al video. */
+  const [intento, setIntento] = useState(0)
 
   const enVivo = publicando || transmitiendo
   if (enVivo) estuvoEnVivo.current = true
 
   const desconectar = useCallback(() => {
-    sala.current?.disconnect()
+    // Se suelta la referencia antes de desconectar: así el aviso de desconexión de LiveKit se reconoce como
+    // provocado aquí y no dispara una reconexión.
+    const actual = sala.current
     sala.current = null
+    actual?.disconnect()
     if (videoRef.current) videoRef.current.srcObject = null
   }, [])
 
   // ── Comprador: se conecta cuando hay transmisión y se desconecta cuando termina ──
   useEffect(() => {
-    if (esSubastador || !transmitiendo) return
+    if (esSubastador || !transmitiendo) {
+      setReconectando(false)
+      setIntento(0)
+      return
+    }
     let cancelado = false
-    setError(null)
+    let reintento: number | undefined
+    if (intento === 0) setError(null)
 
     const adjuntar = (pista: RemoteTrack) => {
       if (pista.kind === Track.Kind.Video && videoRef.current) pista.attach(videoRef.current)
       if (pista.kind === Track.Kind.Audio && audioRef.current) pista.attach(audioRef.current)
+    }
+    // La transmisión sigue activa pero el video no llegó o se cayó: se vuelve a intentar en lugar de dejar al
+    // comprador con la pantalla en negro hasta que recargue la página.
+    const reintentar = () => {
+      if (cancelado) return
+      setReconectando(true)
+      // Espera creciente (2, 4, 8 y 16 s): si el servicio de video está caído no se le insiste sin pausa.
+      reintento = window.setTimeout(() => setIntento((n) => n + 1), ESPERA_REINTENTO_MS * 2 ** Math.min(intento, 3))
     }
 
     ;(async () => {
       try {
         const credenciales = await api.credencialesTransmision(subastaId)
         if (cancelado) return
-        const nueva = new Room()
+        const nueva = nuevaSala()
         nueva.on(RoomEvent.TrackSubscribed, adjuntar)
+        nueva.on(RoomEvent.Reconnecting, () => !cancelado && setReconectando(true))
+        nueva.on(RoomEvent.Reconnected, () => !cancelado && setReconectando(false))
+        nueva.on(RoomEvent.Disconnected, () => {
+          if (sala.current !== nueva) return
+          sala.current = null
+          reintentar()
+        })
         await nueva.connect(credenciales.url, credenciales.token)
         if (cancelado) {
           nueva.disconnect()
           return
         }
         sala.current = nueva
+        setReconectando(false)
+        setError(null)
         // Puede haber pistas ya publicadas antes de que este navegador entrara.
         nueva.remoteParticipants.forEach((p) =>
           p.trackPublications.forEach((pub) => {
@@ -70,15 +116,19 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
           }),
         )
       } catch (e) {
-        if (!cancelado) setError(e instanceof Error ? e.message : 'No se pudo conectar con la transmisión')
+        if (cancelado) return
+        // La primera vez se muestra el motivo; después se sigue intentando mientras la transmisión esté activa.
+        if (intento === 0) setError(e instanceof Error ? e.message : 'No se pudo conectar con la transmisión')
+        reintentar()
       }
     })()
 
     return () => {
       cancelado = true
+      window.clearTimeout(reintento)
       desconectar()
     }
-  }, [esSubastador, transmitiendo, subastaId, desconectar])
+  }, [esSubastador, transmitiendo, subastaId, desconectar, intento])
 
   // ── Subastador: si sale de la sala mientras transmite, se corta el video ──
   useEffect(() => {
@@ -90,6 +140,7 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
     }
     window.addEventListener('pagehide', alCerrarPestana)
     return () => {
+      emision.current++
       window.removeEventListener('pagehide', alCerrarPestana)
       if (sala.current) {
         desconectar()
@@ -97,6 +148,64 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
       }
     }
   }, [esSubastador, subastaId, desconectar])
+
+  /** Conecta la sala de video y publica la cámara. Lanza si algo falla; quien llama decide qué mostrar. */
+  async function publicar(conMicrofono: boolean) {
+    const credenciales = await api.iniciarTransmision(subastaId)
+    const nueva = nuevaSala()
+    nueva.on(RoomEvent.Reconnecting, () => setReconectando(true))
+    nueva.on(RoomEvent.Reconnected, () => setReconectando(false))
+    nueva.on(RoomEvent.Disconnected, () => {
+      if (sala.current !== nueva) return
+      sala.current = null
+      void alPerderLaEmision(conMicrofono)
+    })
+    await nueva.connect(credenciales.url, credenciales.token)
+    sala.current = nueva
+    await nueva.localParticipant.setCameraEnabled(true)
+    let conAudio = conMicrofono
+    if (conAudio) {
+      conAudio = await nueva.localParticipant.setMicrophoneEnabled(true).then(
+        () => true,
+        () => false,
+      )
+    }
+    if (!conAudio) setAviso(MSG_SIN_MICROFONO)
+    nueva.localParticipant.getTrackPublication(Track.Source.Camera)?.track?.attach(videoRef.current!)
+    setReconectando(false)
+    setPublicando(true)
+  }
+
+  /**
+   * La emisión se cayó sin que el Subastador la detuviera. Antes la pantalla seguía mostrando EN VIVO mientras
+   * los compradores ya no veían nada. Ahora intenta volver a emitir sola (el servidor espera unos segundos
+   * antes de dar la transmisión por terminada) y, si no puede, lo dice.
+   */
+  async function alPerderLaEmision(conMicrofono: boolean) {
+    const estaEmision = emision.current
+    const abandonada = () => emision.current !== estaEmision
+    setReconectando(true)
+    while (reintentosDelEmisor.current < REINTENTOS_DEL_EMISOR) {
+      reintentosDelEmisor.current++
+      await new Promise((listo) => window.setTimeout(listo, ESPERA_REINTENTO_MS))
+      if (abandonada()) return
+      try {
+        await publicar(conMicrofono)
+        // Si detuvo o salió mientras se reconectaba, no debe quedar emitiendo.
+        if (abandonada()) desconectar()
+        reintentosDelEmisor.current = 0
+        return
+      } catch {
+        desconectar()
+        if (abandonada()) return
+      }
+    }
+    reintentosDelEmisor.current = 0
+    setReconectando(false)
+    setPublicando(false)
+    setError(MSG_TRANSMISION_CAIDA)
+    await api.detenerTransmision(subastaId).catch(() => undefined)
+  }
 
   async function iniciar() {
     setError(null)
@@ -110,22 +219,7 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
         setError(MSG_CAMARA)
         return
       }
-
-      const credenciales = await api.iniciarTransmision(subastaId)
-      const nueva = new Room()
-      await nueva.connect(credenciales.url, credenciales.token)
-      sala.current = nueva
-      await nueva.localParticipant.setCameraEnabled(true)
-      let conAudio = microfono
-      if (conAudio) {
-        conAudio = await nueva.localParticipant.setMicrophoneEnabled(true).then(
-          () => true,
-          () => false,
-        )
-      }
-      if (!conAudio) setAviso(MSG_SIN_MICROFONO)
-      nueva.localParticipant.getTrackPublication(Track.Source.Camera)?.track?.attach(videoRef.current!)
-      setPublicando(true)
+      await publicar(microfono)
     } catch (e) {
       desconectar()
       await api.detenerTransmision(subastaId).catch(() => undefined)
@@ -136,6 +230,8 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
   }
 
   async function detener() {
+    emision.current++
+    reintentosDelEmisor.current = 0
     setOcupado(true)
     setAviso(null)
     desconectar()
@@ -144,6 +240,7 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo detener la transmisión')
     } finally {
+      setReconectando(false)
       setPublicando(false)
       setOcupado(false)
     }
@@ -163,6 +260,12 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
               {estuvoEnVivo.current ? <VideoOff /> : <Radio />}
             </span>
             {mensaje}
+          </p>
+        )}
+        {enVivo && reconectando && (
+          <p className="video__mensaje" role="status">
+            <LoaderCircle className="conexion__giro" aria-hidden="true" />
+            {MSG_RECONECTANDO}
           </p>
         )}
         {enVivo && (

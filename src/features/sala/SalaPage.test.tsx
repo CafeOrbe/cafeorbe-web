@@ -175,6 +175,87 @@ describe('SalaPage · subasta en vivo', () => {
     expect(screen.getByTestId('video').textContent).toBe('receptor:sin señal')
   })
 
+  it('un fallo al consultar la transmisión no le corta el video a quien ya lo estaba viendo', async () => {
+    vi.mocked(api.estadoTransmision).mockResolvedValue({ transmitiendo: true, sala: 's1' })
+    await abrir(detalle())
+    expect(screen.getByTestId('video').textContent).toBe('receptor:en vivo')
+
+    // La conexión parpadea y, al volver, el servicio de video no responde a tiempo.
+    vi.mocked(api.estadoTransmision).mockRejectedValue(new Error('tiempo agotado'))
+    await conexion('cerrada')
+    await conexion('abierta')
+
+    expect(screen.getByTestId('video').textContent).toBe('receptor:en vivo')
+  })
+
+  it('si se pierde el aviso de una puja, la siguiente lo delata y la sala se pone al día', async () => {
+    await abrir(detalle())
+    const consultas = vi.mocked(api.detalle).mock.calls.length
+    const puja = (n: number, monto: number) =>
+      recibir('PUJA_ACEPTADA', {
+        pujaId: 'p' + n,
+        usuarioId: 'u-bruno',
+        usuarioNombre: 'Bruno',
+        monto,
+        cantidadPujas: n,
+        siguienteMinimo: monto + 10,
+        ocurridaEn: '2026-10-05T15:01:00Z',
+      })
+
+    // Las pujas 1 y 2 llegan seguidas: no falta ninguna, no hay nada que consultar.
+    puja(1, 110)
+    puja(2, 120)
+    await esperar()
+    expect(vi.mocked(api.detalle).mock.calls.length).toBe(consultas)
+
+    // Llega la 4 sin haber visto la 3.
+    vi.mocked(api.detalle).mockResolvedValue(
+      detalle({
+        precioActual: 140,
+        siguienteMinimo: 150,
+        cantidadPujas: 4,
+        lider: { id: 'u-bruno', nombre: 'Bruno' },
+        ultimasPujas: [4, 3, 2, 1].map((n) => ({
+          id: 'p' + n,
+          usuarioId: 'u-bruno',
+          usuarioNombre: 'Bruno',
+          monto: 100 + n * 10,
+          creadaEn: '2026-10-05T15:01:00Z',
+        })),
+      }),
+    )
+    puja(4, 140)
+    await esperar()
+
+    expect(vi.mocked(api.detalle).mock.calls.length).toBe(consultas + 1)
+    expect(within(screen.getByRole('region', { name: 'Últimas pujas' })).getAllByRole('listitem')).toHaveLength(4)
+  })
+
+  it('mientras la subasta está en curso la sala se compara con el servidor cada minuto', async () => {
+    const azar = vi.spyOn(Math, 'random').mockReturnValue(0)
+    await abrir(detalle())
+    const consultas = vi.mocked(api.detalle).mock.calls.length
+
+    // Se perdió el aviso de que empezó la transmisión.
+    vi.mocked(api.estadoTransmision).mockResolvedValue({ transmitiendo: true, sala: 's1' })
+    await esperar(59_000)
+    expect(vi.mocked(api.detalle).mock.calls.length).toBe(consultas)
+    await esperar(1000)
+
+    expect(vi.mocked(api.detalle).mock.calls.length).toBe(consultas + 1)
+    expect(screen.getByTestId('video').textContent).toBe('receptor:en vivo')
+    azar.mockRestore()
+  })
+
+  it('una subasta programada no se consulta cada minuto: nada cambia sin un evento', async () => {
+    await abrir(detalle({ estado: 'PROGRAMADA', horaInicio: null, horaFin: null }))
+    const consultas = vi.mocked(api.detalle).mock.calls.length
+
+    await esperar(180_000)
+
+    expect(vi.mocked(api.detalle).mock.calls.length).toBe(consultas)
+  })
+
   it('HU-13 · la puja rápida viaja por el WebSocket', async () => {
     await abrir(detalle())
 

@@ -16,7 +16,7 @@ const { salas, RoomFalsa, estado } = vi.hoisted(() => {
     conectadaA: { url: string; token: string } | null = null
     desconectada = false
     camaraEncendida = false
-    oyentes = new Map<string, (pista: Pista) => void>()
+    oyentes = new Map<string, (pista?: Pista) => void>()
     pistaDeCamara = { attach: () => undefined }
     remoteParticipants = new Map([['emisor', { trackPublications: new Map<string, { track: Pista | null }>() }]])
     localParticipant = {
@@ -29,15 +29,20 @@ const { salas, RoomFalsa, estado } = vi.hoisted(() => {
       getTrackPublication: () => ({ track: this.pistaDeCamara }),
     }
 
-    constructor() {
+    constructor(readonly opciones?: unknown) {
       salas.push(this)
       estado.pistasPublicadas.forEach((pista, i) => this.remoteParticipants.get('emisor')!.trackPublications.set(`p${i}`, { track: pista }))
       // Una publicación todavía sin pista (el emisor la está negociando) no debe romper nada.
       this.remoteParticipants.get('emisor')!.trackPublications.set('pendiente', { track: null })
     }
 
-    on(evento: string, oyente: (pista: Pista) => void) {
+    on(evento: string, oyente: (pista?: Pista) => void) {
       this.oyentes.set(evento, oyente)
+    }
+
+    /** Simula un aviso de LiveKit sobre el estado de la conexión. */
+    avisar(evento: 'reconnecting' | 'reconnected' | 'disconnected') {
+      this.oyentes.get(evento)?.()
     }
 
     async connect(url: string, token: string) {
@@ -55,7 +60,12 @@ const { salas, RoomFalsa, estado } = vi.hoisted(() => {
 
 vi.mock('livekit-client', () => ({
   Room: RoomFalsa,
-  RoomEvent: { TrackSubscribed: 'trackSubscribed' },
+  RoomEvent: {
+    TrackSubscribed: 'trackSubscribed',
+    Reconnecting: 'reconnecting',
+    Reconnected: 'reconnected',
+    Disconnected: 'disconnected',
+  },
   Track: { Kind: { Video: 'video', Audio: 'audio' }, Source: { Camera: 'camera' } },
 }))
 vi.mock('../../shared/api/endpoints', () => ({
@@ -148,6 +158,49 @@ describe('VideoLive · Comprador (HU-15)', () => {
     rerender(comprador(false))
     rerender(comprador(true))
     expect((await screen.findByRole('alert')).textContent).toBe('No se pudo conectar con la transmisión')
+  })
+
+  it('pide a LiveKit solo la calidad que cada espectador necesita', async () => {
+    render(comprador(true))
+    await waitFor(() => expect(sala()?.conectadaA).toBeTruthy())
+    expect(sala().opciones).toEqual({ adaptiveStream: true, dynacast: true })
+  })
+
+  it('si la red parpadea avisa que está reconectando y lo retira al volver', async () => {
+    render(comprador(true))
+    await waitFor(() => expect(sala()?.conectadaA).toBeTruthy())
+
+    act(() => sala().avisar('reconnecting'))
+    expect(screen.getByRole('status').textContent).toBe('Reconectando el video…')
+    expect(screen.getByText('EN VIVO')).toBeTruthy()
+
+    act(() => sala().avisar('reconnected'))
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('si el video se cae con la transmisión activa vuelve a conectarse solo', async () => {
+    render(comprador(true))
+    await waitFor(() => expect(sala()?.conectadaA).toBeTruthy())
+
+    act(() => sala().avisar('disconnected'))
+    expect(screen.getByRole('status').textContent).toBe('Reconectando el video…')
+
+    await waitFor(() => expect(salas).toHaveLength(2), { timeout: 5000 })
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(sala().conectadaA).toEqual({ url: 'wss://livekit.test', token: 'tk' })
+    expect(api.credencialesTransmision).toHaveBeenCalledTimes(2)
+  })
+
+  it('si la reconexión falla sigue intentando sin mostrar un error nuevo', async () => {
+    render(comprador(true))
+    await waitFor(() => expect(sala()?.conectadaA).toBeTruthy())
+    vi.mocked(api.credencialesTransmision).mockRejectedValueOnce(new Error('Error 502'))
+
+    act(() => sala().avisar('disconnected'))
+
+    await waitFor(() => expect(api.credencialesTransmision).toHaveBeenCalledTimes(2), { timeout: 5000 })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('Reconectando el video…')
   })
 
   it('si sale de la sala mientras se conectaba no deja la conexión abierta', async () => {
@@ -261,6 +314,63 @@ describe('VideoLive · Subastador (HU-11)', () => {
     await iniciarTransmision()
     fireEvent.click(screen.getByRole('button', { name: 'Detener transmisión' }))
     expect((await screen.findByRole('alert')).textContent).toBe('No se pudo detener la transmisión')
+  })
+
+  it('si la emisión se cae vuelve a emitir sola, sin que el Subastador haga nada', async () => {
+    render(subastador())
+    await iniciarTransmision()
+
+    act(() => sala().avisar('disconnected'))
+    expect(screen.getByRole('status').textContent).toBe('Reconectando el video…')
+
+    await waitFor(() => expect(salas).toHaveLength(2), { timeout: 5000 })
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    expect(sala().camaraEncendida).toBe(true)
+    expect(api.iniciarTransmision).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: 'Detener transmisión' })).toBeTruthy()
+    expect(api.detenerTransmision).not.toHaveBeenCalled()
+  })
+
+  it('si no logra volver a emitir lo dice y deja de mostrarse EN VIVO', async () => {
+    render(subastador())
+    await iniciarTransmision()
+    estado.falloAlConectar = new Error('sin red')
+
+    act(() => sala().avisar('disconnected'))
+
+    expect((await screen.findByRole('alert', undefined, { timeout: 10_000 })).textContent).toBe(
+      'Se perdió la conexión del video. Pulsa Iniciar transmisión para volver a emitir.',
+    )
+    expect(screen.getByRole('button', { name: 'Iniciar transmisión' })).toBeTruthy()
+    expect(screen.queryByText('EN VIVO')).toBeNull()
+    expect(api.iniciarTransmision).toHaveBeenCalledTimes(4)
+    expect(api.detenerTransmision).toHaveBeenCalledWith('s1')
+  })
+
+  it('detener mientras se reconectaba no vuelve a poner el video al aire', async () => {
+    render(subastador())
+    await iniciarTransmision()
+
+    act(() => sala().avisar('disconnected'))
+    fireEvent.click(screen.getByRole('button', { name: 'Detener transmisión' }))
+    await screen.findByRole('button', { name: 'Iniciar transmisión' })
+    await act(() => new Promise((listo) => setTimeout(listo, 2500)))
+
+    expect(salas).toHaveLength(1)
+    expect(api.iniciarTransmision).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('EN VIVO')).toBeNull()
+  })
+
+  it('el aviso de desconexión de una sala que el propio Subastador cerró se ignora', async () => {
+    render(subastador())
+    await iniciarTransmision()
+    const cerrada = sala()
+    fireEvent.click(screen.getByRole('button', { name: 'Detener transmisión' }))
+    await screen.findByRole('button', { name: 'Iniciar transmisión' })
+
+    act(() => cerrada.avisar('disconnected'))
+
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('Hallazgo 12 · al cerrar la pestaña mientras transmite avisa al servidor', async () => {

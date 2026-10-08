@@ -42,11 +42,14 @@ beforeEach(() => {
   vi.useFakeTimers()
   WebSocketFalso.instancias = []
   vi.stubGlobal('WebSocket', WebSocketFalso)
+  // La espera de reconexión lleva una parte al azar; con 0 queda en su valor base.
+  vi.spyOn(Math, 'random').mockReturnValue(0)
 })
 
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('SalaSocket', () => {
@@ -61,14 +64,82 @@ describe('SalaSocket', () => {
     expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
   })
 
-  it('mantiene la conexión viva con un PING cada 25 segundos', () => {
+  it('mantiene la conexión viva con un PING cada 15 segundos mientras el servidor responde', () => {
+    const { socket, oyentes } = crear()
+    socket.conectar()
+    const ws = ultimo()
+    ws.abrir()
+
+    vi.advanceTimersByTime(15_000)
+    ws.onmessage?.({ data: '{"tipo":"PONG","subastaId":"s1","datos":{}}' })
+    vi.advanceTimersByTime(15_000)
+    ws.onmessage?.({ data: '{"tipo":"PONG","subastaId":"s1","datos":{}}' })
+    vi.advanceTimersByTime(14_000)
+
+    expect(ws.enviados).toEqual(['{"tipo":"PING"}', '{"tipo":"PING"}'])
+    expect(WebSocketFalso.instancias).toHaveLength(1)
+    // El PONG solo comprueba la conexión: no es un evento de la sala.
+    expect(oyentes.mensaje).not.toHaveBeenCalled()
+  })
+
+  it('si el servidor deja de responder da la conexión por muerta y reconecta', () => {
+    const { socket, oyentes } = crear()
+    socket.conectar()
+    const muerta = ultimo()
+    muerta.abrir()
+    // Una conexión colgada no avisa de su cierre aunque se le pida cerrar.
+    muerta.close = () => undefined
+
+    vi.advanceTimersByTime(15_000 + 7_999)
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+
+    vi.advanceTimersByTime(1)
+    expect(oyentes.estado).toHaveBeenLastCalledWith('cerrada')
+
+    vi.advanceTimersByTime(1000)
+    expect(WebSocketFalso.instancias).toHaveLength(2)
+    expect(oyentes.estado).toHaveBeenLastCalledWith('conectando')
+  })
+
+  it('cualquier evento de la sala cuenta como señal de vida', () => {
     const { socket } = crear()
     socket.conectar()
     ultimo().abrir()
 
-    vi.advanceTimersByTime(50_000)
+    vi.advanceTimersByTime(15_000)
+    ultimo().onmessage?.({ data: '{"tipo":"CONECTADOS","subastaId":"s1","datos":{"conectados":2}}' })
+    vi.advanceTimersByTime(8_000)
 
-    expect(ultimo().enviados).toEqual(['{"tipo":"PING"}', '{"tipo":"PING"}'])
+    expect(WebSocketFalso.instancias).toHaveLength(1)
+  })
+
+  it('el cierre tardío de una conexión ya descartada no afecta a la nueva', () => {
+    const { socket, oyentes } = crear()
+    socket.conectar()
+    const vieja = ultimo()
+    vieja.abrir()
+    const avisar = vieja.onclose
+    vieja.close = () => undefined
+    vi.advanceTimersByTime(15_000 + 8_000 + 1000)
+    ultimo().abrir()
+
+    avisar?.()
+
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+    expect(WebSocketFalso.instancias).toHaveLength(2)
+  })
+
+  it('reparte las reconexiones en el tiempo para que no lleguen todas a la vez', () => {
+    vi.mocked(Math.random).mockReturnValue(0.5)
+    const { socket } = crear()
+    socket.conectar()
+    ultimo().close()
+
+    // Espera base de 1 s más hasta un 30 % al azar: con 0,5 son 1150 ms.
+    vi.advanceTimersByTime(1149)
+    expect(WebSocketFalso.instancias).toHaveLength(1)
+    vi.advanceTimersByTime(1)
+    expect(WebSocketFalso.instancias).toHaveLength(2)
   })
 
   it('entrega los mensajes JSON e ignora los que no lo son', () => {

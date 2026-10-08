@@ -61,6 +61,21 @@ describe('salaReducer', () => {
     expect(estado.detalle?.ultimasPujas[0].monto).toBe(220)
   })
 
+  it('una puja que llega tarde no devuelve el precio ni el líder a un valor viejo', () => {
+    const alDia = salaReducer(conDetalle, pujaAceptada(130, 'Bruno', 'p2'))
+
+    // La puja de 120 ocurrió antes que la de 130, pero su aviso llegó después.
+    const despues = salaReducer(alDia, pujaAceptada(120, 'Ana', 'p1'))
+
+    expect(despues.detalle?.precioActual).toBe(130)
+    expect(despues.detalle?.siguienteMinimo).toBe(140)
+    expect(despues.detalle?.lider).toEqual({ id: 'u-Bruno', nombre: 'Bruno' })
+    // Se conserva en el historial, en su lugar.
+    expect(despues.detalle?.ultimasPujas.map((p) => p.monto)).toEqual([130, 120])
+    // Repetida, además de atrasada, no cambia nada.
+    expect(salaReducer(despues, pujaAceptada(120, 'Ana', 'p1'))).toBe(despues)
+  })
+
   it('una puja repetida (mismo id) no se duplica en el historial', () => {
     const una = salaReducer(conDetalle, pujaAceptada(110, 'Ana', 'p1'))
     const repetida = salaReducer(una, pujaAceptada(110, 'Ana', 'p1'))

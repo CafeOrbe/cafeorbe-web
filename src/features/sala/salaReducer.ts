@@ -121,6 +121,15 @@ function aplicarMensaje(estado: SalaEstado, mensaje: MensajeSala): SalaEstado {
         creadaEn: String(d.ocurridaEn),
       }
       const yaEstaba = estado.detalle.ultimasPujas.some((p) => p.id === nueva.id)
+      // Con varias instancias del realtime-gateway dos pujas seguidas pueden llegar en desorden. Cada puja
+      // aceptada supera a la anterior, así que una de monto menor que el precio mostrado es más vieja: se
+      // guarda en el historial, pero no puede devolver el precio ni el líder a un valor que ya no es cierto.
+      const atrasada = estado.detalle.precioActual !== null && nueva.monto < estado.detalle.precioActual
+      if (atrasada) {
+        if (yaEstaba) return estado
+        const ultimasPujas = [...estado.detalle.ultimasPujas, nueva].sort((a, b) => b.monto - a.monto).slice(0, MAX_PUJAS_VISIBLES)
+        return { ...estado, detalle: { ...estado.detalle, ultimasPujas } }
+      }
       return {
         ...estado,
         aviso: null,
