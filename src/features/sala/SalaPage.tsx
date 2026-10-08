@@ -1,8 +1,8 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
-import { ArrowLeft, CalendarClock, Gavel, LoaderCircle, Settings2, Users, WifiOff } from 'lucide-react'
+import { AlarmClockPlus, ArrowLeft, CalendarClock, CircleOff, Gavel, LoaderCircle, Settings2, Trophy, Users, WifiOff } from 'lucide-react'
 import type { Detalle } from '../../shared/api/types'
-import { formatFechaHora, formatHora, iniciales } from '../../shared/format'
+import { formatFechaHora, formatHora, formatOrbes, iniciales } from '../../shared/format'
 import { rutaInicio, rutas } from '../../shared/routes'
 import { tokenActual, useSesion } from '../../shared/session'
 import type { EstadoConexion } from '../../shared/ws/salaSocket'
@@ -12,6 +12,8 @@ import { IconoOrbe, Monto } from '../../shared/ui/Orbe'
 import { IniciarSubastaBoton } from '../subasta/IniciarSubastaBoton'
 import { FichaLoteCard } from './FichaLoteCard'
 import { PanelPuja } from './PanelPuja'
+import type { Cierre } from './salaReducer'
+import { Temporizador } from './Temporizador'
 import { useSala } from './useSala'
 
 // El SDK de video (LiveKit) es pesado: se descarga solo al entrar a una sala.
@@ -27,9 +29,31 @@ export function SalaPage() {
 }
 
 function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string; token: string; usuarioId: string; esSubastador: boolean }) {
-  const { estado, pujar, limpiarAviso, dispatch } = useSala(subastaId, token)
+  const { estado, pujar, recargar, limpiarAviso, limpiarExtension, dispatch } = useSala(subastaId, token)
   const { detalle } = estado
   const { usuario } = useSesion()
+  const [anuncioCerrado, setAnuncioCerrado] = useState(false)
+  const cerrarAnuncio = useCallback(() => setAnuncioCerrado(true), [])
+
+  // HU-19: el cierre llega como evento. Si se pierde (la conexión cayó justo al final), la sala no debe quedarse
+  // en 00:00 para siempre: pasada la hora de fin se consulta al servidor hasta que la subasta deje de estar en curso.
+  const enCurso = detalle?.estado === 'EN_CURSO'
+  const horaFin = detalle?.horaFin ?? null
+  useEffect(() => {
+    if (!enCurso || !horaFin) return
+    const finEnMiReloj = Date.parse(horaFin) - estado.desfaseMs
+    const t = window.setInterval(() => {
+      if (Date.now() >= finEnMiReloj + 2500) void recargar()
+    }, 3000)
+    return () => window.clearInterval(t)
+  }, [enCurso, horaFin, estado.desfaseMs, recargar])
+
+  // HU-18: el aviso de tiempo extendido se retira solo.
+  useEffect(() => {
+    if (!estado.extension) return
+    const t = window.setTimeout(limpiarExtension, 6000)
+    return () => window.clearTimeout(t)
+  }, [estado.extension, limpiarExtension])
 
   // Un rechazo de puja no debe quedarse en pantalla para siempre.
   useEffect(() => {
@@ -50,14 +74,25 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
   }
   if (estado.cargando || !detalle) return <SalaCargando />
 
-  // HU-05: una subasta que ya finalizó lleva a los resultados, no a la sala.
-  if (detalle.estado === 'FINALIZADA' || detalle.estado === 'DESIERTA') {
+  // HU-05: una subasta que ya había finalizado lleva a los resultados, no a la sala. Si cierra con la sala
+  // abierta (HU-19) se queda aquí: todos los conectados deben ver el anuncio (HU-21).
+  const terminada = detalle.estado === 'FINALIZADA' || detalle.estado === 'DESIERTA'
+  if (terminada && !estado.cierre) {
     return <Navigate to={rutas.resultados(subastaId)} replace />
   }
 
   return (
     <>
       <EstadoDeConexion conexion={estado.conexion} />
+      {estado.extension && (
+        <div className="conexion conexion--extension" role="status">
+          <AlarmClockPlus aria-hidden="true" />
+          <span>
+            <strong>Tiempo extendido</strong> {estado.extension.segundos} segundos por una puja al final
+            {estado.extension.maximo > 0 && ` (extensión ${estado.extension.numero} de ${estado.extension.maximo})`}.
+          </span>
+        </div>
+      )}
 
       <div className="encabezado">
         <div className="encabezado__texto">
@@ -71,13 +106,16 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
             {formatFechaHora(detalle.fechaInicio)}
           </p>
         </div>
-        <span className="conectados" title="Personas conectadas a la sala">
-          <span className="conectados__punto" aria-hidden="true" />
-          <Users aria-hidden="true" />
-          <span>
-            <strong>{estado.conectados}</strong> conectados
+        <div className="sala__indicadores">
+          {detalle.estado === 'EN_CURSO' && <Temporizador horaFin={detalle.horaFin} desfaseMs={estado.desfaseMs} />}
+          <span className="conectados" title="Personas conectadas a la sala">
+            <span className="conectados__punto" aria-hidden="true" />
+            <Users aria-hidden="true" />
+            <span>
+              <strong>{estado.conectados}</strong> conectados
+            </span>
           </span>
-        </span>
+        </div>
       </div>
 
       <div className={`sala${esSubastador ? '' : ' sala--comprador'}`}>
@@ -131,6 +169,7 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
               usuarioId={usuarioId}
               conectado={estado.conexion === 'abierta'}
               aviso={estado.aviso}
+              desfaseMs={estado.desfaseMs}
               onPujar={pujar}
               onLimpiarAviso={limpiarAviso}
             />
@@ -139,7 +178,81 @@ function Sala({ subastaId, token, usuarioId, esSubastador }: { subastaId: string
           <FeedPujas detalle={detalle} usuarioId={usuarioId} />
         </aside>
       </div>
+
+      {estado.cierre && !anuncioCerrado && (
+        <AnuncioDeCierre
+          cierre={estado.cierre}
+          subastaId={subastaId}
+          usuarioId={usuarioId}
+          inicio={rutaInicio(usuario!.rol)}
+          alCerrar={cerrarAnuncio}
+        />
+      )}
     </>
+  )
+}
+
+/**
+ * HU-21: anuncio que ven todos los conectados cuando la subasta cierra, con ganador o desierta.
+ * No hay notificaciones externas: el anuncio vive en la sala.
+ */
+function AnuncioDeCierre({
+  cierre,
+  subastaId,
+  usuarioId,
+  inicio,
+  alCerrar,
+}: {
+  cierre: Cierre
+  subastaId: string
+  usuarioId: string
+  inicio: string
+  alCerrar: () => void
+}) {
+  const desierta = cierre.estado === 'DESIERTA' || cierre.ganadorNombre === null
+  const gane = !desierta && cierre.ganadorId === usuarioId
+  const principal = useRef<HTMLAnchorElement>(null)
+
+  // El anuncio toma el foco al aparecer y se puede cerrar con Escape para ver el estado final de la sala.
+  useEffect(() => {
+    principal.current?.focus()
+    const alPulsar = (evento: KeyboardEvent) => {
+      if (evento.key === 'Escape') alCerrar()
+    }
+    window.addEventListener('keydown', alPulsar)
+    return () => window.removeEventListener('keydown', alPulsar)
+  }, [alCerrar])
+
+  return (
+    <div className="anuncio" role="dialog" aria-modal="true" aria-labelledby="titulo-anuncio">
+      <div className={`anuncio__tarjeta${desierta ? ' anuncio__tarjeta--desierta' : ''}`}>
+        <span className="anuncio__icono" aria-hidden="true">
+          {desierta ? <CircleOff /> : <Trophy />}
+        </span>
+        <p className="sobretitulo">Subasta cerrada</p>
+        {desierta ? (
+          <h2 id="titulo-anuncio">Subasta desierta: no hubo ganador</h2>
+        ) : (
+          <>
+            <h2 id="titulo-anuncio">{gane ? `¡Ganaste, ${cierre.ganadorNombre}!` : `Ganó ${cierre.ganadorNombre}`}</h2>
+            <p className="anuncio__monto">
+              Monto final: <strong>{formatOrbes(cierre.montoFinal ?? 0)}</strong>
+            </p>
+          </>
+        )}
+        <div className="acciones acciones--centradas">
+          <Link to={rutas.resultados(subastaId)} className="boton boton--primario" ref={principal}>
+            Ver resultados
+          </Link>
+          <Link to={inicio} className="boton boton--secundario">
+            Volver al home
+          </Link>
+        </div>
+        <button type="button" className="boton boton--fantasma boton--chico" onClick={alCerrar}>
+          Seguir en la sala
+        </button>
+      </div>
+    </div>
   )
 }
 

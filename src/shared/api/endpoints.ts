@@ -6,6 +6,7 @@ import type {
   EstadoTransmision,
   FichaFormulario,
   ReglasFormulario,
+  Resultados,
   Resumen,
   Rol,
   SesionRespuesta,
@@ -29,6 +30,8 @@ export const api = {
   guardarReglas: (id: string, reglas: ReglasFormulario) =>
     peticion<Detalle>('PUT', `/api/subastas/${id}/reglas`, reglas),
   iniciarSubasta: (id: string) => peticion<Detalle>('POST', `/api/subastas/${id}/iniciar`),
+  /** HU-22: resultados de una subasta cerrada. */
+  resultados: (id: string) => peticion<Resultados>('GET', `/api/subastas/${id}/resultados`),
 
   // Transmisión (HU-11)
   iniciarTransmision: (id: string) => peticion<Credenciales>('POST', `/api/streaming/subastas/${id}/iniciar`),

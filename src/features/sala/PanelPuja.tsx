@@ -9,11 +9,11 @@ import { estadoDelBoton } from './botonPuja'
 export const MSG_SIN_PUJAS = 'Sin pujas'
 
 /**
- * Hallazgo 18: true cuando ya pasó la hora de fin. Mientras no exista el cierre automático (HU-19) la subasta
- * sigue "En curso" en el servidor, que de todos modos rechaza las pujas tardías; esto evita ofrecer el botón.
+ * true cuando ya pasó la hora de fin según el reloj del servidor. El cierre (HU-19) llega un instante después
+ * como evento; mientras tanto el servidor ya rechaza las pujas tardías, y esto evita ofrecer el botón.
  */
-function useTiempoAgotado(horaFin: string | null): boolean {
-  const fin = horaFin ? Date.parse(horaFin) : NaN
+function useTiempoAgotado(horaFin: string | null, desfaseMs: number): boolean {
+  const fin = horaFin ? Date.parse(horaFin) - desfaseMs : NaN
   const [agotado, setAgotado] = useState(() => Number.isFinite(fin) && Date.now() >= fin)
 
   useEffect(() => {
@@ -37,17 +37,19 @@ interface Props {
   usuarioId: string
   conectado: boolean
   aviso: string | null
+  /** Reloj del servidor menos reloj del navegador, en ms. */
+  desfaseMs: number
   onPujar: (monto: number) => boolean
   onLimpiarAviso: () => void
 }
 
 /** HU-13 y HU-16: precio actual, líder y botón de puja rápida (precio actual + incremento mínimo). */
-export function PanelPuja({ subasta, usuarioId, conectado, aviso, onPujar, onLimpiarAviso }: Props) {
+export function PanelPuja({ subasta, usuarioId, conectado, aviso, desfaseMs, onPujar, onLimpiarAviso }: Props) {
   const [enviando, setEnviando] = useState(false)
   const enCurso = subasta.estado === 'EN_CURSO'
   const soyLider = subasta.lider?.id === usuarioId
   const monto = subasta.siguienteMinimo
-  const tiempoAgotado = useTiempoAgotado(subasta.horaFin)
+  const tiempoAgotado = useTiempoAgotado(subasta.horaFin, desfaseMs)
   const saldo = useSaldoConocido()
 
   // Un rechazo o una puja aceptada cambian la pantalla: se libera el botón.

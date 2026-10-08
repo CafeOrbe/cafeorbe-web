@@ -19,6 +19,10 @@ const detalleEnCurso: Detalle = {
   lider: null,
   cantidadPujas: 0,
   ultimasPujas: [],
+  horaServidor: '2026-09-21T15:00:00Z',
+  segundosRestantes: 600,
+  extensiones: 0,
+  maxExtensiones: 3,
 }
 
 const conDetalle: SalaEstado = { ...estadoInicial, cargando: false, detalle: detalleEnCurso }
@@ -108,5 +112,58 @@ describe('salaReducer', () => {
 
   it('un mensaje desconocido no cambia el estado', () => {
     expect(salaReducer(conDetalle, { tipo: 'MENSAJE', mensaje: { tipo: 'PONG', subastaId: 's1', datos: {} } })).toBe(conDetalle)
+  })
+
+  it('HU-17 · el detalle trae el desfase con el reloj del servidor y se conserva si no llega uno nuevo', () => {
+    const conDesfase = salaReducer(estadoInicial, { tipo: 'DETALLE', detalle: detalleEnCurso, desfaseMs: 4200 })
+    expect(conDesfase.desfaseMs).toBe(4200)
+    expect(salaReducer(conDesfase, { tipo: 'DETALLE', detalle: detalleEnCurso }).desfaseMs).toBe(4200)
+  })
+
+  it('HU-18 · TIEMPO_EXTENDIDO actualiza la hora de fin, muestra el aviso y se puede retirar', () => {
+    const extendida = salaReducer(conDetalle, {
+      tipo: 'MENSAJE',
+      mensaje: {
+        tipo: 'TIEMPO_EXTENDIDO',
+        subastaId: 's1',
+        datos: { segundosExtendidos: 30, horaFin: '2026-09-21T15:10:30Z', extension: 1, maximoExtensiones: 3 },
+      },
+    })
+    expect(extendida.detalle?.horaFin).toBe('2026-09-21T15:10:30Z')
+    expect(extendida.detalle?.extensiones).toBe(1)
+    expect(extendida.extension).toEqual({ segundos: 30, numero: 1, maximo: 3 })
+    expect(salaReducer(extendida, { tipo: 'LIMPIAR_EXTENSION' }).extension).toBeNull()
+  })
+
+  it('HU-19 y HU-21 · SUBASTA_CERRADA con ganador: la sala pasa a Finalizada y guarda el anuncio', () => {
+    const cerrada = salaReducer(conDetalle, {
+      tipo: 'MENSAJE',
+      mensaje: {
+        tipo: 'SUBASTA_CERRADA',
+        subastaId: 's1',
+        datos: { estado: 'FINALIZADA', ganadorId: 'u-Ana', ganadorNombre: 'Ana', montoFinal: 300, cantidadPujas: 5 },
+      },
+    })
+    expect(cerrada.detalle?.estado).toBe('FINALIZADA')
+    expect(cerrada.cierre).toEqual({ estado: 'FINALIZADA', ganadorId: 'u-Ana', ganadorNombre: 'Ana', montoFinal: 300, cantidadPujas: 5 })
+  })
+
+  it('HU-21 · SUBASTA_CERRADA sin pujas: Desierta y sin ganador', () => {
+    const cerrada = salaReducer(conDetalle, {
+      tipo: 'MENSAJE',
+      mensaje: {
+        tipo: 'SUBASTA_CERRADA',
+        subastaId: 's1',
+        datos: { estado: 'DESIERTA', ganadorId: null, ganadorNombre: null, montoFinal: null, cantidadPujas: 0 },
+      },
+    })
+    expect(cerrada.detalle?.estado).toBe('DESIERTA')
+    expect(cerrada.cierre?.ganadorNombre).toBeNull()
+    expect(cerrada.cierre?.montoFinal).toBeNull()
+  })
+
+  it('una subasta que ya estaba cerrada al entrar no tiene anuncio en vivo', () => {
+    const yaCerrada = salaReducer(estadoInicial, { tipo: 'DETALLE', detalle: { ...detalleEnCurso, estado: 'FINALIZADA' } })
+    expect(yaCerrada.cierre).toBeNull()
   })
 })

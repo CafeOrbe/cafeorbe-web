@@ -68,6 +68,27 @@ export interface Detalle {
   lider: Lider | null
   cantidadPujas: number
   ultimasPujas: Puja[]
+  /** Hora del servidor al responder: el temporizador se mide contra ella, no contra el reloj del navegador (HU-17). */
+  horaServidor: string
+  /** Tiempo que queda según el servidor; null si la subasta no está en curso. */
+  segundosRestantes: number | null
+  extensiones: number
+  maxExtensiones: number
+}
+
+/** HU-22: resumen de una subasta cerrada. Sin ganador ni monto final si quedó desierta. */
+export interface Resultados {
+  id: string
+  nombre: string
+  descripcion: string | null
+  estado: EstadoSubasta
+  subastadorNombre: string
+  ficha: Ficha | null
+  ganador: Lider | null
+  montoFinal: number | null
+  cantidadPujas: number
+  ultimasPujas: Puja[]
+  cerradaEn: string | null
 }
 
 export interface Credenciales {
