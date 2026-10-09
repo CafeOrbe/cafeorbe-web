@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { CalendarClock, Gavel, User } from 'lucide-react'
 import type { EstadoSubasta, Resumen } from '../api/types'
-import { formatFechaHora } from '../format'
+import { formatFechaHora, tiempoHasta } from '../format'
 import { EnVivo, EtiquetaEstado } from './EtiquetaEstado'
 import { Monto } from './Orbe'
 import { PortadaLote } from './PortadaLote'
@@ -17,6 +17,10 @@ const ETIQUETA_DEL_PRECIO: Record<EstadoSubasta, string> = {
 /** Tarjeta de una subasta en los listados: portada grande, estado, precio y acciones. */
 export function TarjetaLote({ subasta, mostrarSubastador = true, children }: { subasta: Resumen; mostrarSubastador?: boolean; children: ReactNode }) {
   const enVivo = subasta.estado === 'EN_CURSO'
+  const programada = subasta.estado === 'PROGRAMADA'
+  const faltan = programada ? tiempoHasta(subasta.fechaInicio) : null
+  // Sigue "Programada" porque el Subastador aún no la inicia, aunque su fecha ya pasó.
+  const pendiente = programada && faltan === null
   return (
     <li className={`lote${enVivo ? ' lote--en-vivo' : ''}`}>
       <div className="lote__portada">
@@ -38,6 +42,8 @@ export function TarjetaLote({ subasta, mostrarSubastador = true, children }: { s
             <CalendarClock aria-hidden="true" />
             {formatFechaHora(subasta.fechaInicio)}
           </span>
+          {faltan && <span className="lote__cuenta">Empieza en {faltan}</span>}
+          {pendiente && <span className="lote__alerta">Pendiente de iniciar</span>}
           {mostrarSubastador && (
             <span>
               <User aria-hidden="true" />
@@ -53,7 +59,7 @@ export function TarjetaLote({ subasta, mostrarSubastador = true, children }: { s
                 <Monto cantidad={subasta.precioActual} grande />
               </>
             ) : (
-              <span className="lote__precio-etiqueta">Sin precio aún</span>
+              <span className="lote__precio-etiqueta">Precio base: por definir</span>
             )}
           </div>
           <div className="lote__acciones">{children}</div>

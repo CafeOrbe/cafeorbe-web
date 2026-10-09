@@ -98,13 +98,17 @@ describe('etiquetas y marca', () => {
       </>,
     )
     expect(screen.getByText('EN VIVO')).toBeTruthy()
-    expect(screen.getByText('1500 Orbes')).toBeTruthy()
+    expect(screen.getByText('1.500 Orbes')).toBeTruthy()
     expect(container.querySelector('.monto--grande')).toBeTruthy()
     expect(container.querySelector('.marca--grande')?.textContent).toBe('CaféOrbe')
   })
 
   it('PortadaLote dibuja siempre lo mismo para la misma subasta', () => {
-    const dibujo = (semilla: string) => render(<PortadaLote semilla={semilla} />).container.querySelector('rect + g')?.innerHTML
+    // Los ids de los degradados cambian en cada render (useId): se ignoran y se compara solo el dibujo.
+    const dibujo = (semilla: string) =>
+      render(<PortadaLote semilla={semilla} />)
+        .container.querySelector('rect + g')
+        ?.innerHTML.replace(/url\(#\w+\)/g, 'url(#)')
     expect(dibujo('s1')).toBe(dibujo('s1'))
     expect(dibujo('s1')).not.toBe(dibujo('s2'))
   })
@@ -149,7 +153,7 @@ describe('TarjetaLote', () => {
     expect(screen.getByText('Precio base')).toBeTruthy()
 
     tarjeta({ id: 's2', precioActual: null })
-    expect(screen.getByText('Sin precio aún')).toBeTruthy()
+    expect(screen.getByText('Precio base: por definir')).toBeTruthy()
   })
 })
 
@@ -201,7 +205,7 @@ describe('SaldoOrbes', () => {
 
     await esperarConsulta()
 
-    expect(screen.getByTitle('Tu saldo de Orbes').textContent).toContain('1000 Orbes')
+    expect(screen.getByTitle('Tu saldo de Orbes').textContent).toContain('1.000 Orbes')
   })
 
   it('HU-06 · tras un cobro el saldo se actualiza y nunca es negativo', async () => {
@@ -227,7 +231,7 @@ describe('SaldoOrbes', () => {
 
     vi.mocked(api.saldo).mockRejectedValueOnce(new Error('sin red'))
     await act(() => vi.advanceTimersByTimeAsync(30_000))
-    expect(screen.getByTitle('Tu saldo de Orbes').textContent).toContain('1000 Orbes')
+    expect(screen.getByTitle('Tu saldo de Orbes').textContent).toContain('1.000 Orbes')
 
     vi.mocked(api.saldo).mockResolvedValueOnce({ usuarioId: 'u-ana', saldo: 900 })
     await act(() => vi.advanceTimersByTimeAsync(30_000))

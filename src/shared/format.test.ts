@@ -1,11 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { aValorDatetimeLocal, etiquetaEstado, etiquetaRol, formatFechaHora, formatHora, formatOrbes, iniciales } from './format'
+import { aValorDatetimeLocal, etiquetaEstado, etiquetaRol, formatFechaHora, formatHora, formatOrbes, iniciales, tiempoHasta } from './format'
 import { rutaInicio, rutas } from './routes'
 
 describe('format', () => {
-  it('HU-06 · muestra los Orbes sin separador de miles', () => {
-    expect(formatOrbes(1000)).toBe('1000 Orbes')
+  it('HU-06 · muestra los Orbes con separador de miles', () => {
+    expect(formatOrbes(1000)).toBe('1.000 Orbes')
     expect(formatOrbes(700)).toBe('700 Orbes')
+    expect(formatOrbes(99999870)).toBe('99.999.870 Orbes')
+  })
+
+  it('tiempoHasta resume cuánto falta y devuelve null si ya pasó', () => {
+    const ahora = new Date('2026-10-09T12:00:00Z').getTime()
+    const en = (min: number) => new Date(ahora + min * 60_000).toISOString()
+    expect(tiempoHasta(en(0.2), ahora)).toBe('menos de 1 min')
+    expect(tiempoHasta(en(12), ahora)).toBe('12 min')
+    expect(tiempoHasta(en(120), ahora)).toBe('2 h')
+    expect(tiempoHasta(en(135), ahora)).toBe('2 h 15 min')
+    expect(tiempoHasta(en(24 * 60), ahora)).toBe('1 día')
+    expect(tiempoHasta(en(3 * 24 * 60 + 30), ahora)).toBe('3 días')
+    expect(tiempoHasta(en(-1), ahora)).toBeNull()
   })
 
   it('traduce roles y estados', () => {

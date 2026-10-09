@@ -9,9 +9,17 @@ import { useSesion } from '../../shared/session'
 import { useAvisos } from '../../shared/ui/Avisos'
 import { EnVivo } from '../../shared/ui/EtiquetaEstado'
 import { CargandoLotes, EstadoError, EstadoVacio } from '../../shared/ui/Estados'
-import { PortadaLote } from '../../shared/ui/PortadaLote'
+import { FondoHero } from '../../shared/ui/FondoHero'
 import { TarjetaLote } from '../../shared/ui/TarjetaLote'
 import { useAvisoDeRuta } from '../../shared/ui/useAvisoDeRuta'
+
+function resumenDeSubastas(enVivo: number, proximas: number, cargando: boolean): string {
+  if (cargando) return 'Buscando subastas…'
+  const partes: string[] = []
+  if (enVivo > 0) partes.push(`${enVivo} subastando ahora`)
+  if (proximas > 0) partes.push(`${proximas} ${proximas === 1 ? 'programada' : 'programadas'}`)
+  return partes.length > 0 ? partes.join(' · ') : 'Aún no hay subastas programadas.'
+}
 
 /** HU-04: subastas disponibles. HU-07: aviso de la carga automática de Orbes en el primer ingreso. */
 export function HomeCompradorPage() {
@@ -63,13 +71,13 @@ export function HomeCompradorPage() {
     <>
       <section className="hero">
         <div className="hero__fondo" aria-hidden="true">
-          <PortadaLote semilla={`hero-${usuario.id}`} />
+          <FondoHero />
         </div>
         <p className="sobretitulo">Hola, {usuario.nombre}</p>
         <h1 className="hero__titulo">
-          Café de origen, <em>puja en vivo</em>
+          Subastas <em>disponibles</em>
         </h1>
-        <p className="subtitulo">Estas son las subastas disponibles.</p>
+        <p className="subtitulo">{resumenDeSubastas(enVivo.length, proximas.length, subastas === null)}</p>
       </section>
 
       {error && <EstadoError titulo="No pudimos cargar las subastas" mensaje={error} />}

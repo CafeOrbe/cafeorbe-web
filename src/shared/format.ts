@@ -1,8 +1,23 @@
 import type { EstadoSubasta, Rol } from './api/types'
 
-/** Sin separadores de miles: la pantalla muestra "1000 Orbes". */
+/** Cantidad con separador de miles, como se lee en Colombia: "99.999.870 Orbes". */
 export function formatOrbes(cantidad: number): string {
-  return `${cantidad} Orbes`
+  return `${cantidad.toLocaleString('es-CO')} Orbes`
+}
+
+/**
+ * Tiempo que falta para un instante, en palabras cortas: "3 días", "2 h 15 min", "12 min", "menos de 1 min".
+ * Devuelve null si el instante ya pasó.
+ */
+export function tiempoHasta(iso: string, ahora: number = Date.now()): string | null {
+  const minutos = Math.floor((new Date(iso).getTime() - ahora) / 60_000)
+  if (Number.isNaN(minutos) || minutos < 0) return null
+  if (minutos < 1) return 'menos de 1 min'
+  if (minutos < 60) return `${minutos} min`
+  const horas = Math.floor(minutos / 60)
+  if (horas < 24) return minutos % 60 === 0 ? `${horas} h` : `${horas} h ${minutos % 60} min`
+  const dias = Math.floor(horas / 24)
+  return `${dias} ${dias === 1 ? 'día' : 'días'}`
 }
 
 export function etiquetaRol(rol: Rol): string {

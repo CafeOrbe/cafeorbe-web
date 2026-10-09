@@ -39,6 +39,42 @@ describe('HomeSubastadorPage · HU-24', () => {
     expect(ganancias().getByRole('link', { name: 'Geisha lavado' })).toBeTruthy()
   })
 
+  it('destaca la próxima subasta, o la que está en vivo, con su acción', async () => {
+    vi.mocked(api.ganancias).mockResolvedValue({ total: 0, ventas: [] })
+    const manana = new Date(Date.now() + 26 * 3600_000).toISOString()
+    vi.mocked(api.misSubastas).mockResolvedValue([
+      resumen({ id: 's9', nombre: 'Lote lejano', estado: 'PROGRAMADA', fechaInicio: new Date(Date.now() + 96 * 3600_000).toISOString() }),
+      resumen({ id: 's8', nombre: 'Lote de mañana', estado: 'PROGRAMADA', fechaInicio: manana }),
+      resumen({ id: 's7', nombre: 'Lote vencido', estado: 'PROGRAMADA', fechaInicio: '2020-01-01T10:00:00Z' }),
+    ])
+    abrir()
+
+    const bloque = within(await screen.findByRole('region', { name: 'Tu próxima subasta' }))
+    expect(bloque.getByText('Lote de mañana')).toBeTruthy()
+    expect(bloque.getByRole('link', { name: /Gestionar/ }).getAttribute('href')).toBe('/subastador/subastas/s8')
+  })
+
+  it('si hay una subasta en vivo la pone por delante de la próxima', async () => {
+    vi.mocked(api.ganancias).mockResolvedValue({ total: 0, ventas: [] })
+    vi.mocked(api.misSubastas).mockResolvedValue([
+      resumen({ id: 's8', nombre: 'Lote de mañana', estado: 'PROGRAMADA', fechaInicio: new Date(Date.now() + 26 * 3600_000).toISOString() }),
+      resumen({ id: 's5', nombre: 'Lote en vivo', estado: 'EN_CURSO', cantidadPujas: 4 }),
+    ])
+    abrir()
+
+    const bloque = within(await screen.findByRole('region', { name: /Estás subastando ahora/ }))
+    expect(bloque.getByText('Lote en vivo')).toBeTruthy()
+    expect(bloque.getByText('4 pujas hasta ahora')).toBeTruthy()
+    expect(bloque.getByRole('link', { name: /Ir a la sala/ }).getAttribute('href')).toBe('/subastas/s5/sala')
+  })
+
+  it('sin subastas por empezar no muestra el bloque', async () => {
+    vi.mocked(api.ganancias).mockResolvedValue({ total: 0, ventas: [] })
+    abrir()
+    await ganancias().findByText('Aún no has vendido ningún lote.')
+    expect(screen.queryByRole('region', { name: /próxima subasta|subastando ahora/i })).toBeNull()
+  })
+
   it('sin ventas explica cuándo aparecerán los Orbes', async () => {
     vi.mocked(api.ganancias).mockResolvedValue({ total: 0, ventas: [] })
     abrir()

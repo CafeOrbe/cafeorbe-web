@@ -245,6 +245,7 @@ Todas las llamadas REST pasan por una sola función (`peticion`), que agrega el 
 | Un solo cliente REST y un solo cliente WebSocket | Autenticación, errores y reconexión resueltos en un lugar | |
 | Validación duplicada en cliente y servidor | Respuesta inmediata al usuario; el servidor sigue siendo la autoridad | Mensajes que mantener iguales en dos lugares |
 | Carga diferida del SDK de video | Es la dependencia más pesada y solo se usa en la sala | Un instante de carga al entrar a la primera sala |
+| Identidad visual: bosque, café y oro (imágenes `public/images`) | La marca es dorada y verde: pide fondos oscuros para el logotipo (barra y portada) | Los logos son PNG: pesan más que un SVG |
 | CSS propio en un solo archivo, sin framework de componentes | Control total del diseño con pocas dependencias | Archivo grande; sin componentes prefabricados |
 
 ## 9. Atributos de calidad
@@ -276,7 +277,7 @@ Requiere Node.js (probado con la versión 22) y el backend arriba (ver `cafeorbe
 ```bash
 npm install
 npm run dev          # http://localhost:5173
-npm test             # 35 pruebas
+npm test             # 248 pruebas
 npm run build        # comprobación de tipos + build de producción
 ```
 
@@ -308,11 +309,10 @@ El sitio se publica en Vercel. `VITE_API_URL` y `VITE_WS_URL` se configuran all�
 
 | Riesgo o deuda | Impacto | Acción propuesta |
 |---|---|---|
-| El repositorio no tiene pipeline de CI | Las pruebas no se ejecutan en cada cambio; Vercel solo compila | Flujo de GitHub Actions con `npm test` y `npm run build` |
-| Sin pruebas de componentes | La interfaz se verifica con un script externo, no en el repositorio | Pruebas de componentes o de extremo a extremo dentro del repositorio |
 | El token viaja en la URL del WebSocket | Puede quedar en registros de acceso | Token de un solo uso para abrir el canal |
 | Saldo por consulta periódica | Hasta 8 s de retraso tras un cobro | Evento `orbes.cobrados` por la sala (Sprint 2) |
 | Vistas previas de Vercel | Usan otro origen y el backend las rechaza por CORS | Lista de orígenes por ambiente |
+| Pruebas de extremo a extremo | Los flujos completos se verifican con un script externo, no en el repositorio | Pruebas E2E dentro del repositorio |
 | Un solo archivo de estilos | Difícil de mantener si la interfaz crece | Dividir por funcionalidad |
 
 **Decisión a confirmar con el Product Owner (HU-13):** el criterio de la tarea pide deshabilitar el botón "si no hay saldo" y el escenario pide poder pulsarlo y ver `Orbes insuficientes`. Se implementaron ambos: con 0 Orbes se deshabilita; con saldo menor que el monto sigue activo y el rechazo lo da el servidor.

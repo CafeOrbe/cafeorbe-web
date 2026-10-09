@@ -85,7 +85,7 @@ describe('App', () => {
 
   it('HU-06 · el Comprador ve su saldo en la barra superior', async () => {
     abrir('/comprador', ANA)
-    await waitFor(() => expect(screen.getByTitle('Tu saldo de Orbes').textContent).toContain('1000 Orbes'))
+    await waitFor(() => expect(screen.getByTitle('Tu saldo de Orbes').textContent).toContain('1.000 Orbes'))
   })
 
   it('HU-02 · cerrar sesión borra la sesión y vuelve al acceso', async () => {
@@ -107,11 +107,11 @@ describe('App', () => {
     vi.mocked(api.subastasDisponibles).mockResolvedValue([resumen({ estado: 'EN_CURSO' })])
     abrir('/login')
 
-    await userEvent.type(screen.getByLabelText('Tu nombre'), 'Ana')
+    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), 'Ana')
     await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
-    await userEvent.click(screen.getByRole('button', { name: 'Ingresar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Entrar a la sala' }))
 
     expect(await screen.findByText('Hola, Ana')).toBeTruthy()
-    expect(await screen.findByText('¡Bienvenido! Recibiste 1000 Orbes para pujar.', undefined, { timeout: 4000 })).toBeTruthy()
+    expect(await screen.findByText('¡Bienvenido! Recibiste 1.000 Orbes para pujar.', undefined, { timeout: 4000 })).toBeTruthy()
   })
 })

@@ -9,7 +9,7 @@ import { LoginPage } from './LoginPage'
 vi.mock('../../shared/api/endpoints', () => ({ api: { iniciarSesion: vi.fn() } }))
 
 const abrir = (usuario = null as typeof ANA | null) => renderEnApp(<LoginPage />, { usuario, ruta: '/login' })
-const ingresar = () => userEvent.click(screen.getByRole('button', { name: /Ingresa/ }))
+const ingresar = () => userEvent.click(screen.getByRole('button', { name: /Entrar a la sala|Entrando/ }))
 
 beforeEach(() => {
   vi.mocked(api.iniciarSesion).mockReset()
@@ -18,15 +18,22 @@ beforeEach(() => {
 describe('LoginPage · HU-01', () => {
   it('sin rol seleccionado no se puede ingresar', () => {
     abrir()
-    expect((screen.getByRole('button', { name: 'Ingresar' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Entrar a la sala' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText('Selecciona un rol para continuar.')).toBeTruthy()
+  })
+
+  it('con rol pero sin nombre el botón sigue deshabilitado y pide el nombre', async () => {
+    abrir()
+    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
+    expect((screen.getByRole('button', { name: 'Entrar a la sala' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('Escribe tu nombre para continuar.')).toBeTruthy()
   })
 
   it('Acceso exitoso como Comprador: crea la sesión y lleva a su home', async () => {
     vi.mocked(api.iniciarSesion).mockResolvedValue({ token: 'abc', usuario: ANA, nuevo: false })
     abrir()
 
-    await userEvent.type(screen.getByLabelText('Tu nombre'), '  Ana ')
+    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), '  Ana ')
     await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
     await ingresar()
 
@@ -38,7 +45,7 @@ describe('LoginPage · HU-01', () => {
     vi.mocked(api.iniciarSesion).mockResolvedValue({ token: 'abc', usuario: LUIS, nuevo: false })
     abrir()
 
-    await userEvent.type(screen.getByLabelText('Tu nombre'), 'Luis')
+    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), 'Luis')
     await userEvent.click(screen.getByRole('radio', { name: /Subastador/ }))
     await ingresar()
 
@@ -49,7 +56,7 @@ describe('LoginPage · HU-01', () => {
   it('Nombre vacío: muestra "El nombre es obligatorio" y no crea la sesión', async () => {
     abrir()
 
-    await userEvent.type(screen.getByLabelText('Tu nombre'), '   ')
+    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), '   ')
     await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
     await ingresar()
 
@@ -65,19 +72,19 @@ describe('LoginPage · HU-01', () => {
     vi.mocked(api.iniciarSesion).mockRejectedValueOnce(new Error('No se pudo conectar con el servidor.'))
     abrir()
 
-    await userEvent.type(screen.getByLabelText('Tu nombre'), 'Ana')
+    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), 'Ana')
     await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
     await ingresar()
 
     expect((await screen.findByRole('alert')).textContent).toBe('No se pudo conectar con el servidor.')
-    expect((screen.getByRole('button', { name: 'Ingresar' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Entrar a la sala' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('un fallo sin detalle se explica con un mensaje genérico', async () => {
     vi.mocked(api.iniciarSesion).mockRejectedValueOnce('fallo')
     abrir()
 
-    await userEvent.type(screen.getByLabelText('Tu nombre'), 'Ana')
+    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), 'Ana')
     await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
     await ingresar()
 

@@ -1,15 +1,20 @@
 import { useId, useMemo } from 'react'
+import { cordillera, GranoCafe, RamaCafe, Surcos } from './CafeDibujos'
 
 /**
- * Portada ilustrada de un lote. Como los lotes no tienen foto, se dibuja una composición determinista
- * (curvas de nivel de montaña, cerezas y hojas de cafeto) a partir de una semilla, normalmente el id de la subasta:
- * la misma subasta siempre tiene la misma portada.
+ * Portada ilustrada de un lote. Como los lotes no tienen foto, se dibuja un paisaje cafetero sereno y determinista:
+ * laderas sembradas de cafetos, una rama con cerezas y algunos granos flotando. La semilla, normalmente el id de la
+ * subasta, fija la paleta, el lado de la rama, los granos y el relieve: la misma subasta siempre tiene la misma portada.
  */
 const PALETAS = [
-  { fondo: ['oklch(26% 0.05 35)', 'oklch(40% 0.12 28)'], hoja: 'oklch(52% 0.11 150)', cereza: 'oklch(56% 0.2 25)' },
-  { fondo: ['oklch(24% 0.04 150)', 'oklch(38% 0.08 145)'], hoja: 'oklch(62% 0.12 145)', cereza: 'oklch(58% 0.2 25)' },
-  { fondo: ['oklch(30% 0.06 55)', 'oklch(48% 0.1 65)'], hoja: 'oklch(50% 0.1 150)', cereza: 'oklch(52% 0.19 22)' },
-  { fondo: ['oklch(22% 0.05 15)', 'oklch(36% 0.12 18)'], hoja: 'oklch(55% 0.1 140)', cereza: 'oklch(64% 0.17 35)' },
+  // Bosque
+  { cielo: ['oklch(36% 0.08 155)', 'oklch(22% 0.05 158)'], montes: ['oklch(40% 0.09 150)', 'oklch(30% 0.07 153)', 'oklch(21% 0.05 156)'] },
+  // Café tostado
+  { cielo: ['oklch(38% 0.06 62)', 'oklch(21% 0.04 52)'], montes: ['oklch(36% 0.07 90)', 'oklch(28% 0.06 70)', 'oklch(19% 0.04 55)'] },
+  // Selva de altura
+  { cielo: ['oklch(40% 0.09 140)', 'oklch(24% 0.06 150)'], montes: ['oklch(35% 0.09 145)', 'oklch(27% 0.07 150)', 'oklch(19% 0.05 155)'] },
+  // Amanecer espresso
+  { cielo: ['oklch(32% 0.06 50)', 'oklch(17% 0.03 45)'], montes: ['oklch(30% 0.07 120)', 'oklch(23% 0.05 140)', 'oklch(16% 0.04 150)'] },
 ]
 
 function semillaNumerica(texto: string): number {
@@ -37,59 +42,33 @@ export function PortadaLote({ semilla, className = '' }: { semilla: string; clas
   const dibujo = useMemo(() => {
     const r = aleatorio(semillaNumerica(semilla))
     const paleta = PALETAS[Math.floor(r() * PALETAS.length)]
-    const centro = { x: 80 + r() * 240, y: 60 + r() * 130 }
-    const curvas = Array.from({ length: 9 }, (_, i) => ({
-      rx: 40 + i * 34 + r() * 10,
-      ry: 22 + i * 20 + r() * 8,
-      giro: -20 + r() * 40,
-    }))
-    const racimo = { x: 250 + r() * 110, y: 120 + r() * 90 }
-    const cerezas = Array.from({ length: 5 + Math.floor(r() * 3) }, () => ({
-      x: racimo.x + (r() - 0.5) * 70,
-      y: racimo.y + (r() - 0.5) * 46,
-      radio: 11 + r() * 8,
-    }))
-    const hojas = Array.from({ length: 3 }, (_, i) => ({
-      x: racimo.x - 30 + r() * 40,
-      y: racimo.y - 20 + r() * 30,
-      giro: -160 + i * 60 + r() * 30,
-      escala: 0.8 + r() * 0.5,
-    }))
-    return { paleta, centro, curvas, cerezas, hojas }
+    const rama = { derecha: r() < 0.5, y: 118 + r() * 24, giro: -8 + r() * 16 }
+    const granos = Array.from({ length: 4 }, () => ({ x: 40 + r() * 320, y: 22 + r() * 70, escala: 0.7 + r() * 0.7, giro: r() * 180 }))
+    const montes = [cordillera(r, 400, 250, 150, 55), cordillera(r, 400, 250, 190, 45), cordillera(r, 400, 250, 232, 35)]
+    return { paleta, rama, granos, montes }
   }, [semilla])
 
-  const { paleta, centro, curvas, cerezas, hojas } = dibujo
+  const { paleta, rama, granos, montes } = dibujo
 
   return (
     <svg className={`portada ${className}`} viewBox="0 0 400 250" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <defs>
-        <linearGradient id={`f${id}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" style={{ stopColor: paleta.fondo[0] }} />
-          <stop offset="1" style={{ stopColor: paleta.fondo[1] }} />
+        <linearGradient id={`f${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" style={{ stopColor: paleta.cielo[0] }} />
+          <stop offset="1" style={{ stopColor: paleta.cielo[1] }} />
         </linearGradient>
-        <radialGradient id={`c${id}`} cx="0.35" cy="0.3" r="0.75">
-          <stop offset="0" stopColor="white" stopOpacity="0.45" />
-          <stop offset="0.35" stopColor="white" stopOpacity="0" />
-        </radialGradient>
       </defs>
       <rect width="400" height="250" fill={`url(#f${id})`} />
-      <g fill="none" stroke="white" strokeOpacity="0.13" strokeWidth="1.2">
-        {curvas.map((c, i) => (
-          <ellipse key={i} cx={centro.x} cy={centro.y} rx={c.rx} ry={c.ry} transform={`rotate(${c.giro} ${centro.x} ${centro.y})`} />
+      <g>
+        {granos.map((g, i) => (
+          <GranoCafe key={i} x={g.x} y={g.y} escala={g.escala} rotacion={g.giro} opacidad={0.4} />
         ))}
+        <RamaCafe x={rama.derecha ? 412 : -12} y={rama.y} escala={0.95} rotacion={rama.giro} espejo={rama.derecha} />
       </g>
-      {hojas.map((h, i) => (
-        <g key={i} transform={`translate(${h.x} ${h.y}) rotate(${h.giro}) scale(${h.escala})`}>
-          <path d="M0 0C28-26 84-26 118 0 84 26 28 26 0 0Z" style={{ fill: paleta.hoja }} opacity="0.92" />
-          <path d="M4 0H112" stroke="black" strokeOpacity="0.2" strokeWidth="1.5" />
-        </g>
-      ))}
-      {cerezas.map((c, i) => (
+      {montes.map((m, i) => (
         <g key={i}>
-          <circle cx={c.x + 2} cy={c.y + 3} r={c.radio} fill="black" opacity="0.2" />
-          <circle cx={c.x} cy={c.y} r={c.radio} style={{ fill: paleta.cereza }} />
-          <circle cx={c.x} cy={c.y} r={c.radio} fill={`url(#c${id})`} />
-          <circle cx={c.x + c.radio * 0.45} cy={c.y + c.radio * 0.4} r={c.radio * 0.12} fill="black" opacity="0.25" />
+          <path d={m.relleno} style={{ fill: paleta.montes[i] }} />
+          {i < 2 && <Surcos cresta={m.cresta} filas={i === 0 ? 3 : 4} separacion={9} />}
         </g>
       ))}
     </svg>
