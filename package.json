@@ -18,7 +18,8 @@
     "lucide-react": "^1.48.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

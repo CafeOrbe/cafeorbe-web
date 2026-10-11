@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { z } from 'zod'
 import { api } from './api/endpoints'
 import { configurarCliente } from './api/client'
 import type { Rol, Usuario } from './api/types'
@@ -6,10 +7,18 @@ import type { Rol, Usuario } from './api/types'
 const CLAVE = 'cafeorbe.sesion'
 const EVENTO_EXPIRADA = 'cafeorbe:sesion-expirada'
 
-interface SesionGuardada {
-  token: string
-  usuario: Usuario
-}
+// 1. Definimos el esquema estricto con Zod
+const SesionGuardadaSchema = z.object({
+  token: z.string().min(1),
+  usuario: z.object({
+    id: z.string(),
+    nombre: z.string(),
+    rol: z.enum(['COMPRADOR', 'SUBASTADOR'])
+  })
+})
+
+// 2. Inferimos la interfaz automáticamente (ya no necesitas escribir interface SesionGuardada)
+type SesionGuardada = z.infer<typeof SesionGuardadaSchema>
 
 interface ContextoSesion {
   usuario: Usuario | null
@@ -22,21 +31,14 @@ interface ContextoSesion {
 
 const Contexto = createContext<ContextoSesion | null>(null)
 
-function sesionValida(valor: unknown): SesionGuardada | null {
-  if (typeof valor !== 'object' || valor === null) return null
-  const { token, usuario } = valor as { token?: unknown; usuario?: unknown }
-  if (typeof token !== 'string' || token === '') return null
-  if (typeof usuario !== 'object' || usuario === null) return null
-  const { id, nombre, rol } = usuario as { id?: unknown; nombre?: unknown; rol?: unknown }
-  if (typeof id !== 'string' || typeof nombre !== 'string') return null
-  if (rol !== 'COMPRADOR' && rol !== 'SUBASTADOR') return null
-  return { token, usuario: { id, nombre, rol } }
-}
-
 function leer(): SesionGuardada | null {
   try {
     const texto = sessionStorage.getItem(CLAVE)
-    return texto ? sesionValida(JSON.parse(texto)) : null
+    if (!texto) return null
+    
+    // safeParse no lanza errores si falla, solo devuelve { success: false }
+    const resultado = SesionGuardadaSchema.safeParse(JSON.parse(texto))
+    return resultado.success ? resultado.data : null
   } catch {
     return null
   }
@@ -44,9 +46,13 @@ function leer(): SesionGuardada | null {
 
 function guardar(sesion: SesionGuardada | null) {
   try {
-    const limpia = sesion ? sesionValida(sesion) : null
-    if (limpia) sessionStorage.setItem(CLAVE, JSON.stringify(limpia))
-    else sessionStorage.removeItem(CLAVE)
+    if (sesion) {
+      // parse() aquí limpia cualquier propiedad inyectada que no esté en el Schema
+      const limpia = SesionGuardadaSchema.parse(sesion)
+      sessionStorage.setItem(CLAVE, JSON.stringify(limpia))
+    } else {
+      sessionStorage.removeItem(CLAVE)
+    }
   } catch {
     // Sin almacenamiento disponible: la sesión vive solo en memoria.
   }
@@ -90,12 +96,19 @@ export function ProveedorSesion({ children }: { children: ReactNode }) {
 
   const iniciarSesion = useCallback(async (nombre: string, rol: Rol) => {
     const respuesta = await api.iniciarSesion(nombre, rol)
-    const nueva = { token: respuesta.token, usuario: respuesta.usuario }
+  
+    const nueva = SesionGuardadaSchema.parse({ 
+      token: respuesta.token, 
+      usuario: respuesta.usuario 
+    })
+    
     guardar(nueva)
     fijarToken(nueva.token)
-    setBienvenidaPendiente(respuesta.nuevo && respuesta.usuario.rol === 'COMPRADOR')
+    
+    setBienvenidaPendiente(respuesta.nuevo && nueva.usuario.rol === 'COMPRADOR')
     setSesion(nueva)
-    return respuesta.usuario
+    
+    return nueva.usuario
   }, [])
 
   const valor = useMemo<ContextoSesion>(

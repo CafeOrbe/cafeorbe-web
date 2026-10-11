@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
 /** Error de la API con el formato uniforme {status, mensaje, campos}. */
@@ -15,13 +17,22 @@ export class ApiError extends Error {
 let token: string | null = null
 let alExpirarSesion: (() => void) | null = null
 
-/** La sesión registra aquí el token vigente y qué hacer si el servidor responde 401. */
 export function configurarCliente(nuevoToken: string | null, alExpirar: (() => void) | null) {
   token = nuevoToken
   alExpirarSesion = alExpirar
 }
 
-export async function peticion<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise<T> {
+const ErrorApiSchema = z.object({
+  mensaje: z.string().optional(),
+  campos: z.record(z.string()).optional()
+}).passthrough()
+
+export async function peticion<T>(
+  metodo: string, 
+  ruta: string, 
+  cuerpo?: unknown,
+  esquemaRespuesta?: z.ZodSchema<T> 
+): Promise<T> {
   const cabeceras: Record<string, string> = {}
   if (cuerpo !== undefined) cabeceras['Content-Type'] = 'application/json'
   if (token) cabeceras.Authorization = `Bearer ${token}`
@@ -41,25 +52,30 @@ export async function peticion<T>(metodo: string, ruta: string, cuerpo?: unknown
 
   const texto = await respuesta.text()
   const json = texto ? safeJson(texto) : null
+  
   if (!respuesta.ok) {
-    const mensaje = typeof json?.mensaje === 'string' ? json.mensaje : `Error ${respuesta.status}`
-    throw new ApiError(respuesta.status, mensaje, (json?.campos as Record<string, string>) ?? {})
+
+    const errorParseado = json ? ErrorApiSchema.safeParse(json) : null
+    const datosError = errorParseado?.success ? errorParseado.data : null
+
+    const mensaje = datosError?.mensaje ?? `Error ${respuesta.status}`
+    throw new ApiError(respuesta.status, mensaje, datosError?.campos ?? {})
   }
+  
+  if (esquemaRespuesta && json !== null) {
+    return esquemaRespuesta.parse(json)
+  }
+
   return json as T
 }
 
-/**
- * Petición que sobrevive al cierre de la pestaña (`keepalive`). No espera respuesta ni lanza errores:
- * sirve para avisar al servidor en `pagehide`, cuando la página ya no puede procesar nada.
- */
 export function peticionAlSalir(metodo: string, ruta: string): void {
   const cabeceras: Record<string, string> = {}
   if (token) cabeceras.Authorization = `Bearer ${token}`
   void fetch(`${BASE}${ruta}`, { method: metodo, headers: cabeceras, keepalive: true }).catch(() => undefined)
-  // El navegador puede rechazar la petición al descargar la página; el servidor se entera igual por LiveKit.
 }
 
-function safeJson(texto: string): Record<string, unknown> | null {
+function safeJson(texto: string): unknown {
   try {
     return JSON.parse(texto)
   } catch {
