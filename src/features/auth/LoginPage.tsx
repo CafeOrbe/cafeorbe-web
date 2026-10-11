@@ -27,7 +27,7 @@ export function LoginPage() {
 
   if (usuario) return <Navigate to={rutaInicio(usuario.rol)} replace />
 
-  async function enviar(evento: FormEvent) {
+  async function enviar(evento: FormEvent): Promise<void> {
     evento.preventDefault()
     const error = validarNombre(nombre)
     setErrorNombre(error)
@@ -37,7 +37,7 @@ export function LoginPage() {
     setEnviando(true)
     try {
       const u = await iniciarSesion(nombre.trim(), rol)
-      navegar(rutaInicio(u.rol), { replace: true })
+      void navegar(rutaInicio(u.rol), { replace: true })
     } catch (e) {
       setErrorServidor(e instanceof Error ? e.message : 'No se pudo iniciar sesión')
       setEnviando(false)
@@ -94,7 +94,6 @@ export function LoginPage() {
               maxLength={50}
               autoComplete="nickname"
               placeholder="¿Cómo te verán en la sala?"
-              autoFocus
               onChange={(e) => {
                 setNombre(e.target.value)
                 if (errorNombre) setErrorNombre(null)

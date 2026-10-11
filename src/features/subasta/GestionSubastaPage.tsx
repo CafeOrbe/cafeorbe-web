@@ -104,7 +104,7 @@ export function GestionSubastaPage() {
             subasta={subasta}
             alIniciar={(d) => {
               setSubasta(d)
-              navegar(rutas.sala(d.id))
+              void navegar(rutas.sala(d.id))
             }}
           />
           <Link to={rutas.sala(subasta.id)} className="boton boton--secundario">

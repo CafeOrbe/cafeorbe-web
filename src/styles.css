@@ -1647,7 +1647,6 @@ svg {
   width: min(100%, 500px);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
   padding: clamp(1.5rem, 3vw, 2.25rem);
   border: 1px solid oklch(72% 0.14 78 / 40%);
   border-radius: var(--radio-lg);

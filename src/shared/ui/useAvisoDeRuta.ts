@@ -12,7 +12,7 @@ export function useAvisoDeRuta() {
     const aviso = (ubicacion.state as { aviso?: string } | null)?.aviso
     if (aviso) {
       mostrar(aviso, 'error')
-      navegar(ubicacion.pathname, { replace: true, state: null })
+      void navegar(ubicacion.pathname, { replace: true, state: null })
     }
   }, [ubicacion, navegar, mostrar])
 }

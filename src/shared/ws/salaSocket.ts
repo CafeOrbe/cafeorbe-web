@@ -19,6 +19,12 @@ interface Oyentes {
   estado: (estado: EstadoConexion) => void
 }
 
+function urlDeSalaSegura(subastaId: string, token: string): string {
+  const url = `${WS_BASE}/ws/salas/${encodeURIComponent(subastaId)}?token=${encodeURIComponent(token)}`
+  if (new URL(url).origin !== new URL(WS_BASE).origin) throw new Error('La sala apunta a un servidor no permitido')
+  return url
+}
+
 /** Cliente WebSocket único de la sala: reconecta solo, con espera creciente, y mantiene la conexión viva. */
 export class SalaSocket {
   private ws: WebSocket | null = null
@@ -30,7 +36,7 @@ export class SalaSocket {
   private readonly url: string
 
   constructor(subastaId: string, token: string, private readonly oyentes: Oyentes) {
-    this.url = `${WS_BASE}/ws/salas/${subastaId}?token=${encodeURIComponent(token)}`
+    this.url = urlDeSalaSegura(subastaId, token)
   }
 
   conectar() {
@@ -87,7 +93,8 @@ export class SalaSocket {
     if (!this.cerrado) {
       const base = Math.min(1000 * 2 ** this.intentos++, 10_000)
       // Espera aleatoria añadida: si el servidor se reinicia, no reconectan todos los compradores a la vez.
-      const espera = base + Math.floor(Math.random() * base * 0.3)
+      const jitter = (crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32) * (base * 0.3)
+      const espera = base + Math.floor(jitter)
       this.temporizadorReintento = window.setTimeout(() => this.conectar(), espera)
     }
   }

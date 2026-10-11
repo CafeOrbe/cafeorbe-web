@@ -85,7 +85,8 @@ export function useSala(subastaId: string, token: string) {
   const enCurso = estado.detalle?.estado === 'EN_CURSO'
   useEffect(() => {
     if (!enCurso) return
-    const cada = RESINCRONIZAR_CADA_MS + Math.floor(Math.random() * 15_000)
+    const jitter = (crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32) * 15_000
+    const cada = RESINCRONIZAR_CADA_MS + Math.floor(jitter)
     const t = window.setInterval(() => {
       if (document.visibilityState === 'visible') void recargar()
     }, cada)

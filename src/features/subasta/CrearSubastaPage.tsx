@@ -21,7 +21,7 @@ export function CrearSubastaPage() {
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
 
-  async function guardar(evento: FormEvent) {
+  async function guardar(evento: FormEvent): Promise<void> {
     evento.preventDefault()
     setErrorGeneral(null)
     const encontrados = validarCrearSubasta({ nombre, fechaInicio })
@@ -36,7 +36,7 @@ export function CrearSubastaPage() {
         fechaInicio: new Date(fechaInicio).toISOString(),
       })
       mostrar('Subasta creada. Ahora registra la ficha del lote y las reglas de puja.', 'exito')
-      navegar(rutas.gestionar(creada.id), { replace: true })
+      void navegar(rutas.gestionar(creada.id), { replace: true })
     } catch (e) {
       if (e instanceof ApiError && Object.keys(e.campos).length > 0) setErrores(e.campos)
       else setErrorGeneral(e instanceof Error ? e.message : 'No se pudo crear la subasta')

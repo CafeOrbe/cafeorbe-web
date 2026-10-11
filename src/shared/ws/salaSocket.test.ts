@@ -38,12 +38,20 @@ function crear() {
   return { socket, oyentes }
 }
 
+let azar = 0
+
 beforeEach(() => {
   vi.useFakeTimers()
   WebSocketFalso.instancias = []
   vi.stubGlobal('WebSocket', WebSocketFalso)
   // La espera de reconexión lleva una parte al azar; con 0 queda en su valor base.
-  vi.spyOn(Math, 'random').mockReturnValue(0)
+  azar = 0
+  vi.stubGlobal('crypto', {
+    getRandomValues: (arr: Uint32Array) => {
+      arr[0] = Math.floor(azar * 2 ** 32)
+      return arr
+    },
+  })
 })
 
 afterEach(() => {
@@ -130,7 +138,7 @@ describe('SalaSocket', () => {
   })
 
   it('reparte las reconexiones en el tiempo para que no lleguen todas a la vez', () => {
-    vi.mocked(Math.random).mockReturnValue(0.5)
+    azar = 0.5
     const { socket } = crear()
     socket.conectar()
     ultimo().close()

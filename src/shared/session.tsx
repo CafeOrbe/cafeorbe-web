@@ -22,10 +22,21 @@ interface ContextoSesion {
 
 const Contexto = createContext<ContextoSesion | null>(null)
 
+function sesionValida(valor: unknown): SesionGuardada | null {
+  if (typeof valor !== 'object' || valor === null) return null
+  const { token, usuario } = valor as { token?: unknown; usuario?: unknown }
+  if (typeof token !== 'string' || token === '') return null
+  if (typeof usuario !== 'object' || usuario === null) return null
+  const { id, nombre, rol } = usuario as { id?: unknown; nombre?: unknown; rol?: unknown }
+  if (typeof id !== 'string' || typeof nombre !== 'string') return null
+  if (rol !== 'COMPRADOR' && rol !== 'SUBASTADOR') return null
+  return { token, usuario: { id, nombre, rol } }
+}
+
 function leer(): SesionGuardada | null {
   try {
     const texto = sessionStorage.getItem(CLAVE)
-    return texto ? (JSON.parse(texto) as SesionGuardada) : null
+    return texto ? sesionValida(JSON.parse(texto)) : null
   } catch {
     return null
   }
@@ -33,7 +44,8 @@ function leer(): SesionGuardada | null {
 
 function guardar(sesion: SesionGuardada | null) {
   try {
-    if (sesion) sessionStorage.setItem(CLAVE, JSON.stringify(sesion))
+    const limpia = sesion ? sesionValida(sesion) : null
+    if (limpia) sessionStorage.setItem(CLAVE, JSON.stringify(limpia))
     else sessionStorage.removeItem(CLAVE)
   } catch {
     // Sin almacenamiento disponible: la sesión vive solo en memoria.

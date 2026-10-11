@@ -60,7 +60,7 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
     // provocado aquí y no dispara una reconexión.
     const actual = sala.current
     sala.current = null
-    actual?.disconnect()
+    void actual?.disconnect()
     if (videoRef.current) videoRef.current.srcObject = null
   }, [])
 
@@ -103,7 +103,7 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
         })
         await nueva.connect(credenciales.url, credenciales.token)
         if (cancelado) {
-          nueva.disconnect()
+          void nueva.disconnect()
           return
         }
         sala.current = nueva
@@ -121,7 +121,7 @@ export function VideoLive({ subastaId, esSubastador, transmitiendo }: Props) {
         if (intento === 0) setError(e instanceof Error ? e.message : 'No se pudo conectar con la transmisión')
         reintentar()
       }
-    })()
+    })().catch(() => undefined)
 
     return () => {
       cancelado = true

@@ -47,7 +47,7 @@ export function SaldoOrbes() {
         .saldo()
         .then((r) => vivo && publicarSaldo(Math.max(0, r.saldo)))
         .catch(() => undefined)
-    consultar()
+    void consultar()
     const intervalo = window.setInterval(consultar, CONSULTAR_CADA_MS)
     window.addEventListener(EVENTO, consultar)
     return () => {

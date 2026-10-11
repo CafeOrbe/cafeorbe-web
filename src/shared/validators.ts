@@ -68,7 +68,7 @@ export function validarFicha(datos: {
   if (datos.identificacion.trim() === '') errores.identificacion = 'La identificación es obligatoria'
   if (datos.tipoCafe.trim() === '') errores.tipoCafe = 'El tipo de café es obligatorio'
   if (numeroPositivo(datos.pesoKg) === null) errores.pesoKg = 'El peso debe ser mayor que cero'
-  const edad = datos.edadMeses.trim() === '' ? NaN : Number(datos.edadMeses)
+  const edad = datos.edadMeses.trim() === '' ? Number.NaN : Number(datos.edadMeses)
   if (!Number.isInteger(edad) || edad < 0) errores.edadMeses = 'La edad debe ser un número de meses (0 o más)'
   return errores
 }

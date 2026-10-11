@@ -232,7 +232,12 @@ describe('SalaPage · subasta en vivo', () => {
   })
 
   it('mientras la subasta está en curso la sala se compara con el servidor cada minuto', async () => {
-    const azar = vi.spyOn(Math, 'random').mockReturnValue(0)
+    vi.stubGlobal('crypto', {
+      getRandomValues: (arr: Uint32Array) => {
+        arr[0] = 0
+        return arr
+      },
+    })
     await abrir(detalle())
     const consultas = vi.mocked(api.detalle).mock.calls.length
 
@@ -244,7 +249,7 @@ describe('SalaPage · subasta en vivo', () => {
 
     expect(vi.mocked(api.detalle).mock.calls.length).toBe(consultas + 1)
     expect(screen.getByTestId('video').textContent).toBe('receptor:en vivo')
-    azar.mockRestore()
+    vi.unstubAllGlobals()
   })
 
   it('una subasta programada no se consulta cada minuto: nada cambia sin un evento', async () => {

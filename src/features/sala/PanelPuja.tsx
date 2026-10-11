@@ -13,7 +13,7 @@ export const MSG_SIN_PUJAS = 'Sin pujas'
  * como evento; mientras tanto el servidor ya rechaza las pujas tardías, y esto evita ofrecer el botón.
  */
 function useTiempoAgotado(horaFin: string | null, desfaseMs: number): boolean {
-  const fin = horaFin ? Date.parse(horaFin) - desfaseMs : NaN
+  const fin = horaFin ? Date.parse(horaFin) - desfaseMs : Number.NaN
   const [agotado, setAgotado] = useState(() => Number.isFinite(fin) && Date.now() >= fin)
 
   useEffect(() => {

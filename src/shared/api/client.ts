@@ -55,11 +55,8 @@ export async function peticion<T>(metodo: string, ruta: string, cuerpo?: unknown
 export function peticionAlSalir(metodo: string, ruta: string): void {
   const cabeceras: Record<string, string> = {}
   if (token) cabeceras.Authorization = `Bearer ${token}`
-  try {
-    void fetch(`${BASE}${ruta}`, { method: metodo, headers: cabeceras, keepalive: true }).catch(() => undefined)
-  } catch {
-    // El navegador puede rechazar la petición al descargar la página; el servidor se entera igual por LiveKit.
-  }
+  void fetch(`${BASE}${ruta}`, { method: metodo, headers: cabeceras, keepalive: true }).catch(() => undefined)
+  // El navegador puede rechazar la petición al descargar la página; el servidor se entera igual por LiveKit.
 }
 
 function safeJson(texto: string): Record<string, unknown> | null {

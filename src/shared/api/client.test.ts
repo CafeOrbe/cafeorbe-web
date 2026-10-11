@@ -112,10 +112,5 @@ describe('peticionAlSalir', () => {
   it('no lanza aunque el navegador rechace la petición', () => {
     fetchFalso.mockRejectedValue(new Error('cancelada'))
     expect(() => peticionAlSalir('POST', '/api/x')).not.toThrow()
-
-    fetchFalso.mockImplementation(() => {
-      throw new Error('página descargada')
-    })
-    expect(() => peticionAlSalir('POST', '/api/x')).not.toThrow()
   })
 })

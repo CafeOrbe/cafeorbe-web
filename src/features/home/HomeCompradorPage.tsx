@@ -56,7 +56,7 @@ export function HomeCompradorPage() {
         }
         await new Promise((r) => setTimeout(r, 750))
       }
-    })()
+    })().catch(() => undefined)
     return () => {
       vivo = false
     }
