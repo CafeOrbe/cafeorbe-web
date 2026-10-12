@@ -24,7 +24,7 @@ export function configurarCliente(nuevoToken: string | null, alExpirar: (() => v
 
 const ErrorApiSchema = z.object({
   mensaje: z.string().optional(),
-  campos: z.record(z.string()).optional()
+  campos: z.record(z.string(), z.any()).optional()
 }).passthrough()
 
 export async function peticion<T>(
