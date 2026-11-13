@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SalaSocket } from './salaSocket'
+import { SalaSocket, ticketValido } from './salaSocket'
 
 class WebSocketFalso {
   static readonly OPEN = 1
@@ -39,7 +39,7 @@ const ultimo = () => WebSocketFalso.instancias[WebSocketFalso.instancias.length 
 
 function crear() {
   const oyentes = { mensaje: vi.fn(), estado: vi.fn() }
-  const obtenerTicket = vi.fn(() => Promise.resolve('a b/c'))
+  const obtenerTicket = vi.fn(() => Promise.resolve('Tk_9-xZ'))
   const socket = new SalaSocket('s1', obtenerTicket, oyentes)
   return { socket, oyentes, obtenerTicket }
 }
@@ -71,7 +71,7 @@ describe('SalaSocket', () => {
     const { socket, oyentes } = crear()
 
     await socket.conectar()
-    expect(ultimo().url).toBe('ws://localhost:8085/ws/salas/s1?ticket=a%20b%2Fc')
+    expect(ultimo().url).toBe('ws://localhost:8085/ws/salas/s1?ticket=Tk_9-xZ')
     expect(oyentes.estado).toHaveBeenLastCalledWith('conectando')
 
     ultimo().abrir()
@@ -237,6 +237,24 @@ describe('SalaSocket', () => {
       'ws://localhost:8085/ws/salas/s1?ticket=t1',
       'ws://localhost:8085/ws/salas/s1?ticket=t2',
     ])
+  })
+
+  it('un ticket con otra forma (espacios, barras, parámetros) no llega a la URL: se reintenta', async () => {
+    const { socket, obtenerTicket } = crear()
+    obtenerTicket.mockResolvedValueOnce('a b/c&host=evil')
+    await socket.conectar()
+    expect(WebSocketFalso.instancias).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(ultimo().url).toBe('ws://localhost:8085/ws/salas/s1?ticket=Tk_9-xZ')
+  })
+
+  it('ticketValido acepta solo base64url', () => {
+    expect(ticketValido('Tk_9-xZ')).toBe(true)
+    expect(ticketValido('')).toBe(false)
+    expect(ticketValido('a b')).toBe(false)
+    expect(ticketValido('x'.repeat(257))).toBe(false)
+    expect(ticketValido(42)).toBe(false)
   })
 
   it('si no se pudo obtener el ticket reintenta con la espera de siempre, sin abrir conexión', async () => {

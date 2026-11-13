@@ -32,10 +32,24 @@ interface Oyentes {
  * SEG-04: la URL lleva un ticket de un solo uso, nunca el token de sesión. Si la URL queda en un log del
  * servidor o de un proxy, el ticket ya se consumió y venció a los pocos segundos.
  */
+/** Forma de los tickets que emite identity: 256 bits aleatorios en base64url, sin relleno. */
+const FORMA_DEL_TICKET = /^[A-Za-z0-9_-]{1,256}$/
+
+/** Un ticket que no tiene la forma esperada no se pone en la URL: se trata como si no se hubiera podido obtener. */
+export function ticketValido(ticket: unknown): ticket is string {
+  return typeof ticket === 'string' && FORMA_DEL_TICKET.test(ticket)
+}
+
+/**
+ * URL de la sala. El servidor sale siempre de la configuración (VITE_WS_URL); la ruta y el ticket se agregan
+ * codificados con la API de URL, y se comprueba que el destino final siga siendo ese servidor.
+ */
 function urlDeSalaSegura(subastaId: string, ticket: string): string {
-  const url = `${WS_BASE}/ws/salas/${encodeURIComponent(subastaId)}?ticket=${encodeURIComponent(ticket)}`
-  if (new URL(url).origin !== new URL(WS_BASE).origin) throw new Error('La sala apunta a un servidor no permitido')
-  return url
+  const base = new URL(WS_BASE)
+  const url = new URL(`${base.pathname.replace(/\/$/, '')}/ws/salas/${encodeURIComponent(subastaId)}`, base)
+  url.searchParams.set('ticket', ticket)
+  if (url.origin !== base.origin) throw new Error('La sala apunta a un servidor no permitido')
+  return url.toString()
 }
 
 /**
@@ -65,7 +79,9 @@ export class SalaSocket {
     this.oyentes.estado('conectando')
     let ticket: string
     try {
-      ticket = await this.obtenerTicket()
+      const recibido = await this.obtenerTicket()
+      if (!ticketValido(recibido)) throw new Error('Ticket con formato inválido')
+      ticket = recibido
     } catch {
       // Sin ticket (red caída o servicio no disponible) se reintenta igual que si la conexión se hubiera caído.
       // Si la sesión venció, el cliente HTTP ya avisó y la página saldrá de la sala.
