@@ -21,6 +21,8 @@ export default defineConfig({
       include: ['src/**/*.ts', 'src/**/*.tsx'],
       // main.tsx solo monta la aplicación en el navegador: probarlo sería levantar todo sin comprobar nada.
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**', 'src/main.tsx'],
+      // MAN-01: meta mínima de cobertura del frontend. Por debajo, `npm run test:coverage` falla.
+      thresholds: { lines: 40, statements: 40 },
     },
   },
 })

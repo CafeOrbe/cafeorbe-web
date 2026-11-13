@@ -11,10 +11,6 @@ export const MAX_OBSERVACIONES = 1000
 
 export type Errores<T extends string> = Partial<Record<T, string>>
 
-export function validarNombre(nombre: string): string | null {
-  return nombre.trim() === '' ? MSG_NOMBRE_OBLIGATORIO : null
-}
-
 /** Convierte un texto a número positivo; null si está vacío, no es número o no es mayor que cero. */
 export function numeroPositivo(texto: string): number | null {
   if (texto.trim() === '') return null

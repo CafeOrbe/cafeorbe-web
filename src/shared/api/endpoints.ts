@@ -14,8 +14,13 @@ import type {
 } from './types'
 
 export const api = {
-  // Acceso (HU-01)
-  iniciarSesion: (nombre: string, rol: Rol) => peticion<SesionRespuesta>('POST', '/api/sesion', { nombre, rol }),
+  // Acceso (HU-01, SEG-01): el único acceso es con una cuenta de Google; no hay login propio.
+  iniciarSesionConGoogle: (idToken: string, rol: Rol) =>
+    peticion<SesionRespuesta>('POST', '/api/sesion/google', { idToken, rol }),
+  /** SEG-05: cierra la sesión en el servidor; se envía aunque la pestaña se esté cerrando. */
+  cerrarSesion: () => peticionAlSalir('POST', '/api/sesion/cerrar'),
+  /** SEG-04: ticket de un solo uso para abrir el WebSocket de la sala. */
+  ticketWs: () => peticion<{ ticket: string; expiraEn: string }>('POST', '/api/sesion/ticket-ws').then((r) => r.ticket),
 
   // Orbes (HU-06)
   saldo: () => peticion<{ usuarioId: string; saldo: number }>('GET', '/api/orbes/saldo'),

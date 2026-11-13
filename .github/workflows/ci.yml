@@ -33,7 +33,12 @@ jobs:
       - name: Test with coverage
         run: npm run test:coverage
 
-      - name: SonarQube scan
+      # MAN-01: espera el Quality Gate; si no pasa, el job queda en rojo y el pull request no se integra.
+      - name: SonarQube scan y Quality Gate
         uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=600

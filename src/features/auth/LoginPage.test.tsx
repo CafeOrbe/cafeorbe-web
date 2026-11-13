@@ -1,98 +1,156 @@
 // @vitest-environment jsdom
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../../shared/api/endpoints'
 import { ANA, LUIS, renderEnApp } from '../../test/utilidades'
+import { reiniciarCargaGoogle } from './BotonGoogle'
 import { LoginPage } from './LoginPage'
 
-vi.mock('../../shared/api/endpoints', () => ({ api: { iniciarSesion: vi.fn() } }))
+vi.mock('../../shared/api/endpoints', () => ({
+  api: { iniciarSesionConGoogle: vi.fn(), cerrarSesion: vi.fn() },
+}))
 
 const abrir = (usuario = null as typeof ANA | null) => renderEnApp(<LoginPage />, { usuario, ruta: '/login' })
-const ingresar = () => userEvent.click(screen.getByRole('button', { name: /Entrar a la sala|Entrando/ }))
 
 beforeEach(() => {
-  vi.mocked(api.iniciarSesion).mockReset()
+  vi.mocked(api.iniciarSesionConGoogle).mockReset()
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  delete window.google
+  reiniciarCargaGoogle()
 })
 
 describe('LoginPage · HU-01', () => {
-  it('sin rol seleccionado no se puede ingresar', () => {
+  it('SEG-01 · no hay login propio: ni campo de nombre, ni contraseña, ni botón para entrar sin Google', () => {
     abrir()
-    expect((screen.getByRole('button', { name: 'Entrar a la sala' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByLabelText(/Nombre/)).toBeNull()
+    expect(document.querySelector('input[type="password"], input[type="text"]')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Entrar a la sala/ })).toBeNull()
     expect(screen.getByText('Selecciona un rol para continuar.')).toBeTruthy()
-  })
-
-  it('con rol pero sin nombre el botón sigue deshabilitado y pide el nombre', async () => {
-    abrir()
-    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
-    expect((screen.getByRole('button', { name: 'Entrar a la sala' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByText('Escribe tu nombre para continuar.')).toBeTruthy()
-  })
-
-  it('Acceso exitoso como Comprador: crea la sesión y lleva a su home', async () => {
-    vi.mocked(api.iniciarSesion).mockResolvedValue({ token: 'abc', usuario: ANA, nuevo: false })
-    abrir()
-
-    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), '  Ana ')
-    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
-    await ingresar()
-
-    expect(api.iniciarSesion).toHaveBeenCalledWith('Ana', 'COMPRADOR')
-    expect((await screen.findByTestId('ubicacion')).textContent).toBe('/comprador')
-  })
-
-  it('Acceso exitoso como Subastador: lleva al home del Subastador', async () => {
-    vi.mocked(api.iniciarSesion).mockResolvedValue({ token: 'abc', usuario: LUIS, nuevo: false })
-    abrir()
-
-    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), 'Luis')
-    await userEvent.click(screen.getByRole('radio', { name: /Subastador/ }))
-    await ingresar()
-
-    expect(api.iniciarSesion).toHaveBeenCalledWith('Luis', 'SUBASTADOR')
-    expect((await screen.findByTestId('ubicacion')).textContent).toBe('/subastador')
-  })
-
-  it('Nombre vacío: muestra "El nombre es obligatorio" y no crea la sesión', async () => {
-    abrir()
-
-    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), '   ')
-    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
-    await ingresar()
-
-    expect(screen.getByRole('alert').textContent).toBe('El nombre es obligatorio')
-    expect(api.iniciarSesion).not.toHaveBeenCalled()
-
-    // Al corregir el nombre el error desaparece.
-    await userEvent.type(screen.getByRole('textbox'), 'Ana')
-    expect(screen.queryByRole('alert')).toBeNull()
-  })
-
-  it('si el servidor falla muestra el motivo y deja reintentar', async () => {
-    vi.mocked(api.iniciarSesion).mockRejectedValueOnce(new Error('No se pudo conectar con el servidor.'))
-    abrir()
-
-    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), 'Ana')
-    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
-    await ingresar()
-
-    expect((await screen.findByRole('alert')).textContent).toBe('No se pudo conectar con el servidor.')
-    expect((screen.getByRole('button', { name: 'Entrar a la sala' }) as HTMLButtonElement).disabled).toBe(false)
-  })
-
-  it('un fallo sin detalle se explica con un mensaje genérico', async () => {
-    vi.mocked(api.iniciarSesion).mockRejectedValueOnce('fallo')
-    abrir()
-
-    await userEvent.type(screen.getByLabelText(/Nombre para la subasta/), 'Ana')
-    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
-    await ingresar()
-
-    expect((await screen.findByRole('alert')).textContent).toBe('No se pudo iniciar sesión')
   })
 
   it('con una sesión activa el acceso redirige al home del rol', () => {
     abrir(LUIS)
     expect(screen.getByTestId('ubicacion').textContent).toBe('/subastador')
+  })
+})
+
+/** Google Identity Services de mentira: guarda el callback para entregar el ID token cuando la prueba quiera. */
+function googleFalso() {
+  const estado: { callback?: (r: { credential?: string }) => void; clientId?: string } = {}
+  window.google = {
+    accounts: {
+      id: {
+        initialize: (o) => {
+          estado.callback = o.callback
+          estado.clientId = o.client_id
+        },
+        renderButton: (contenedor) => {
+          contenedor.textContent = 'Continuar con Google'
+        },
+      },
+    },
+  }
+  return estado
+}
+
+describe('LoginPage · SEG-01 acceso con Google', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'cliente-web.apps.googleusercontent.com')
+  })
+
+  it('primero el rol y luego el botón de Google', async () => {
+    googleFalso()
+    abrir()
+    expect(screen.queryByLabelText(/Nombre para la subasta/)).toBeNull()
+    expect(screen.getByText('Selecciona un rol para continuar.')).toBeTruthy()
+    expect(screen.queryByTestId('boton-google')).toBeNull()
+
+    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
+    expect((await screen.findByTestId('boton-google')).textContent).toBe('Continuar con Google')
+  })
+
+  it('envía el ID token de Google con el rol elegido y lleva al home del rol', async () => {
+    const google = googleFalso()
+    vi.mocked(api.iniciarSesionConGoogle).mockResolvedValue({ token: 'abc', usuario: LUIS, nuevo: false })
+    abrir()
+    await userEvent.click(screen.getByRole('radio', { name: /Subastador/ }))
+    await screen.findByTestId('boton-google')
+
+    expect(google.clientId).toBe('cliente-web.apps.googleusercontent.com')
+    google.callback?.({ credential: 'id-token-de-google' })
+
+    expect((await screen.findByTestId('ubicacion')).textContent).toBe('/subastador')
+    expect(api.iniciarSesionConGoogle).toHaveBeenCalledWith('id-token-de-google', 'SUBASTADOR')
+  })
+
+  it('Acceso como Comprador: lleva a su home', async () => {
+    const google = googleFalso()
+    vi.mocked(api.iniciarSesionConGoogle).mockResolvedValue({ token: 'abc', usuario: ANA, nuevo: false })
+    abrir()
+    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
+    await screen.findByTestId('boton-google')
+
+    google.callback?.({ credential: 'id-token-de-google' })
+
+    expect((await screen.findByTestId('ubicacion')).textContent).toBe('/comprador')
+    expect(api.iniciarSesionConGoogle).toHaveBeenCalledWith('id-token-de-google', 'COMPRADOR')
+  })
+
+  it('un fallo sin detalle se explica con un mensaje genérico', async () => {
+    const google = googleFalso()
+    vi.mocked(api.iniciarSesionConGoogle).mockRejectedValueOnce('fallo')
+    abrir()
+    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
+    await screen.findByTestId('boton-google')
+
+    google.callback?.({ credential: 'id-token-de-google' })
+
+    expect((await screen.findByRole('alert')).textContent).toBe('No se pudo iniciar sesión con Google')
+  })
+
+  it('si el servidor rechaza el token (401) muestra el motivo y deja reintentar', async () => {
+    const google = googleFalso()
+    vi.mocked(api.iniciarSesionConGoogle).mockRejectedValueOnce(new Error('Sesión requerida o expirada'))
+    abrir()
+    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
+    await screen.findByTestId('boton-google')
+
+    google.callback?.({ credential: 'falso' })
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Sesión requerida o expirada')
+    expect(await screen.findByTestId('boton-google')).toBeTruthy()
+  })
+
+  it('si Google no entrega credencial lo explica sin llamar al servidor', async () => {
+    const google = googleFalso()
+    abrir()
+    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
+    await screen.findByTestId('boton-google')
+
+    google.callback?.({})
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Google no entregó la credencial, intenta de nuevo')
+    expect(api.iniciarSesionConGoogle).not.toHaveBeenCalled()
+  })
+
+  it('sin Client ID configurado lo dice en lugar de mostrar un botón roto', async () => {
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', '')
+    abrir()
+    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
+    expect(screen.getByText('El acceso con Google no está configurado en este ambiente.')).toBeTruthy()
+  })
+
+  it('si la librería de Google no carga avisa del problema', async () => {
+    abrir()
+    await userEvent.click(screen.getByRole('radio', { name: /Comprador/ }))
+    const script = document.head.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]')
+    expect(script).toBeTruthy()
+    script?.onerror?.(new Event('error'))
+    expect((await screen.findByRole('alert')).textContent).toBe('No se pudo cargar el acceso con Google')
+    script?.remove()
   })
 })

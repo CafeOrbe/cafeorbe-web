@@ -2,10 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { z } from 'zod'
 import { api } from './api/endpoints'
 import { configurarCliente } from './api/client'
-import type { Rol, Usuario } from './api/types'
+import type { Rol, SesionRespuesta, Usuario } from './api/types'
 
 const CLAVE = 'cafeorbe.sesion'
-const EVENTO_EXPIRADA = 'cafeorbe:sesion-expirada'
+/** El servidor dio la sesión por terminada (401 o cierre 4401 del WebSocket). */
+export const EVENTO_EXPIRADA = 'cafeorbe:sesion-expirada'
 
 // 1. Definimos el esquema estricto con Zod
 const SesionGuardadaSchema = z.object({
@@ -24,7 +25,8 @@ interface ContextoSesion {
   usuario: Usuario | null
   /** true justo después del primer ingreso de un Comprador: hay que avisarle de la carga automática (HU-07). */
   bienvenidaPendiente: boolean
-  iniciarSesion: (nombre: string, rol: Rol) => Promise<Usuario>
+  /** SEG-01: acceso con el ID token que entregó Google. */
+  iniciarSesionConGoogle: (idToken: string, rol: Rol) => Promise<Usuario>
   cerrarSesion: () => void
   bienvenidaMostrada: () => void
 }
@@ -71,32 +73,36 @@ export function ProveedorSesion({ children }: { children: ReactNode }) {
   })
   const [bienvenidaPendiente, setBienvenidaPendiente] = useState(false)
 
-  const cerrarSesion = useCallback(() => {
+  const olvidarSesion = useCallback(() => {
     guardar(null)
     fijarToken(null)
     setBienvenidaPendiente(false)
     setSesion(null)
   }, [])
 
-  // El servidor respondió 401: el token venció o no es válido.
+  /** HU-02 y SEG-05: avisa al servidor, que invalida el token aunque no haya vencido, y luego limpia lo local. */
+  const cerrarSesion = useCallback(() => {
+    if (leer()) api.cerrarSesion()
+    olvidarSesion()
+  }, [olvidarSesion])
+
+  // El servidor respondió 401: el token venció o ya no es válido. No hace falta avisarle.
   useEffect(() => {
-    window.addEventListener(EVENTO_EXPIRADA, cerrarSesion)
-    return () => window.removeEventListener(EVENTO_EXPIRADA, cerrarSesion)
-  }, [cerrarSesion])
+    window.addEventListener(EVENTO_EXPIRADA, olvidarSesion)
+    return () => window.removeEventListener(EVENTO_EXPIRADA, olvidarSesion)
+  }, [olvidarSesion])
 
   // HU-02: con Atrás el navegador puede restaurar una página anterior tal como quedó (bfcache), con la sesión
   // todavía en memoria. Si ya se cerró la sesión, esa página también debe volver al acceso.
   useEffect(() => {
     const alRestaurar = (evento: PageTransitionEvent) => {
-      if (evento.persisted && !leer()) cerrarSesion()
+      if (evento.persisted && !leer()) olvidarSesion()
     }
     window.addEventListener('pageshow', alRestaurar)
     return () => window.removeEventListener('pageshow', alRestaurar)
-  }, [cerrarSesion])
+  }, [olvidarSesion])
 
-  const iniciarSesion = useCallback(async (nombre: string, rol: Rol) => {
-    const respuesta = await api.iniciarSesion(nombre, rol)
-  
+  const abrirSesion = useCallback((respuesta: SesionRespuesta) => {
     const nueva = SesionGuardadaSchema.parse({ 
       token: respuesta.token, 
       usuario: respuesta.usuario 
@@ -111,15 +117,20 @@ export function ProveedorSesion({ children }: { children: ReactNode }) {
     return nueva.usuario
   }, [])
 
+  const iniciarSesionConGoogle = useCallback(
+    async (idToken: string, rol: Rol) => abrirSesion(await api.iniciarSesionConGoogle(idToken, rol)),
+    [abrirSesion],
+  )
+
   const valor = useMemo<ContextoSesion>(
     () => ({
       usuario: sesion?.usuario ?? null,
       bienvenidaPendiente,
-      iniciarSesion,
+      iniciarSesionConGoogle,
       cerrarSesion,
       bienvenidaMostrada: () => setBienvenidaPendiente(false),
     }),
-    [sesion, bienvenidaPendiente, iniciarSesion, cerrarSesion],
+    [sesion, bienvenidaPendiente, iniciarSesionConGoogle, cerrarSesion],
   )
 
   return <Contexto.Provider value={valor}>{children}</Contexto.Provider>

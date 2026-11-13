@@ -6,25 +6,26 @@ import { configurarCliente } from './api/client'
 import { api } from './api/endpoints'
 import { ProveedorSesion, tokenActual, useSesion } from './session'
 
-vi.mock('./api/endpoints', () => ({ api: { iniciarSesion: vi.fn() } }))
+vi.mock('./api/endpoints', () => ({ api: { iniciarSesionConGoogle: vi.fn(), cerrarSesion: vi.fn() } }))
 vi.mock('./api/client', () => ({ configurarCliente: vi.fn() }))
 
 const sesion = () => renderHook(() => useSesion(), { wrapper: ProveedorSesion })
 
 beforeEach(() => {
-  vi.mocked(api.iniciarSesion).mockReset()
+  vi.mocked(api.iniciarSesionConGoogle).mockReset()
+  vi.mocked(api.cerrarSesion).mockReset()
   vi.mocked(configurarCliente).mockReset()
 })
 
 describe('ProveedorSesion', () => {
-  it('HU-01 · iniciar sesión guarda el usuario y entrega el token al cliente HTTP', async () => {
-    vi.mocked(api.iniciarSesion).mockResolvedValue({ token: 'abc', usuario: ANA, nuevo: false })
+  it('HU-01 · iniciar sesión con Google guarda el usuario y entrega el token al cliente HTTP', async () => {
+    vi.mocked(api.iniciarSesionConGoogle).mockResolvedValue({ token: 'abc', usuario: ANA, nuevo: false })
     const { result } = sesion()
     expect(result.current.usuario).toBeNull()
 
-    await act(() => result.current.iniciarSesion('Ana', 'COMPRADOR'))
+    await act(() => result.current.iniciarSesionConGoogle('id-token-Ana', 'COMPRADOR'))
 
-    expect(api.iniciarSesion).toHaveBeenCalledWith('Ana', 'COMPRADOR')
+    expect(api.iniciarSesionConGoogle).toHaveBeenCalledWith('id-token-Ana', 'COMPRADOR')
     expect(result.current.usuario).toEqual(ANA)
     expect(result.current.bienvenidaPendiente).toBe(false)
     expect(tokenActual()).toBe('abc')
@@ -32,10 +33,10 @@ describe('ProveedorSesion', () => {
   })
 
   it('HU-07 · el primer ingreso de un Comprador deja pendiente el aviso de bienvenida', async () => {
-    vi.mocked(api.iniciarSesion).mockResolvedValue({ token: 'abc', usuario: ANA, nuevo: true })
+    vi.mocked(api.iniciarSesionConGoogle).mockResolvedValue({ token: 'abc', usuario: ANA, nuevo: true })
     const { result } = sesion()
 
-    await act(() => result.current.iniciarSesion('Ana', 'COMPRADOR'))
+    await act(() => result.current.iniciarSesionConGoogle('id-token-Ana', 'COMPRADOR'))
     expect(result.current.bienvenidaPendiente).toBe(true)
 
     act(() => result.current.bienvenidaMostrada())
@@ -43,10 +44,10 @@ describe('ProveedorSesion', () => {
   })
 
   it('HU-07 · un Subastador nuevo no recibe aviso de carga de Orbes', async () => {
-    vi.mocked(api.iniciarSesion).mockResolvedValue({ token: 'abc', usuario: LUIS, nuevo: true })
+    vi.mocked(api.iniciarSesionConGoogle).mockResolvedValue({ token: 'abc', usuario: LUIS, nuevo: true })
     const { result } = sesion()
 
-    await act(() => result.current.iniciarSesion('Luis', 'SUBASTADOR'))
+    await act(() => result.current.iniciarSesionConGoogle('id-token-Luis', 'SUBASTADOR'))
 
     expect(result.current.bienvenidaPendiente).toBe(false)
   })
@@ -78,9 +79,12 @@ describe('ProveedorSesion', () => {
     expect(result.current.usuario).toBeNull()
     expect(tokenActual()).toBeNull()
     expect(vi.mocked(configurarCliente).mock.lastCall?.[0]).toBeNull()
+    // SEG-05: también se cierra en el servidor.
+    expect(api.cerrarSesion).toHaveBeenCalledTimes(1)
   })
 
-  it('cuando el servidor responde 401 la sesión se cierra sola', () => {
+  it('cuando el servidor responde 401 la sesión se cierra sola, sin volver a llamar al servidor', () => {
+    vi.mocked(api.cerrarSesion).mockClear()
     guardarSesion(ANA)
     const { result } = sesion()
     const alExpirar = vi.mocked(configurarCliente).mock.lastCall?.[1]
@@ -88,6 +92,21 @@ describe('ProveedorSesion', () => {
     act(() => alExpirar?.())
 
     expect(result.current.usuario).toBeNull()
+    expect(api.cerrarSesion).not.toHaveBeenCalled()
+  })
+
+  it('SEG-01 · iniciar sesión con Google guarda la sesión que devuelve el servidor', async () => {
+    vi.mocked(api.iniciarSesionConGoogle).mockResolvedValue({ token: 'g-abc', usuario: ANA, nuevo: true })
+    const { result } = sesion()
+
+    await act(async () => {
+      await result.current.iniciarSesionConGoogle('id-token', 'COMPRADOR')
+    })
+
+    expect(api.iniciarSesionConGoogle).toHaveBeenCalledWith('id-token', 'COMPRADOR')
+    expect(result.current.usuario).toEqual(ANA)
+    expect(result.current.bienvenidaPendiente).toBe(true)
+    expect(tokenActual()).toBe('g-abc')
   })
 
   it('HU-02 · una página restaurada con Atrás vuelve al acceso si la sesión ya se cerró', () => {
@@ -112,13 +131,13 @@ describe('ProveedorSesion', () => {
   })
 
   it('sin almacenamiento disponible la sesión vive en memoria', async () => {
-    vi.mocked(api.iniciarSesion).mockResolvedValue({ token: 'abc', usuario: ANA, nuevo: false })
+    vi.mocked(api.iniciarSesionConGoogle).mockResolvedValue({ token: 'abc', usuario: ANA, nuevo: false })
     const escribir = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('almacenamiento lleno')
     })
     const { result } = sesion()
 
-    await act(() => result.current.iniciarSesion('Ana', 'COMPRADOR'))
+    await act(() => result.current.iniciarSesionConGoogle('id-token-Ana', 'COMPRADOR'))
 
     expect(result.current.usuario).toEqual(ANA)
     escribir.mockRestore()
