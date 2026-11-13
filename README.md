@@ -88,7 +88,7 @@ flowchart TB
 
 | Carpeta | Contenido | Historias |
 |---|---|---|
-| `features/auth` | Pantalla de acceso con nombre y rol | HU-01 |
+| `features/auth` | Pantalla de acceso con cuenta de Google y rol (sin login propio) | HU-01, SEG-01 |
 | `features/home` | Home del Subastador y del Comprador, aviso de carga de Orbes | HU-03, HU-04, HU-07 |
 | `features/subasta` | Crear subasta, ficha del lote, reglas, botón Iniciar, Mis subastas | HU-08, HU-09, HU-10, HU-12 |
 | `features/sala` | Sala en vivo: panel de puja, video, últimas pujas, conectados | HU-05, HU-06, HU-11, HU-13, HU-14 |
@@ -266,7 +266,8 @@ Variables de entorno de Vite, leídas en tiempo de compilación. En local no hac
 | Variable | Por defecto | Uso |
 |---|---|---|
 | `VITE_API_URL` | `http://localhost:8080` | api-gateway |
-| `VITE_WS_URL` | `ws://localhost:8085` | realtime-gateway |
+| `VITE_WS_URL` | `ws://localhost:8085` | realtime-gateway. La sala se abre con un ticket de un solo uso (`?ticket=`), nunca con el token (SEG-04) |
+| `VITE_GOOGLE_CLIENT_ID` | vacío | Client ID web de Google para el botón "Continuar con Google" (SEG-01) |
 
 Para apuntar a otros servidores, copiar `.env.example` como `.env.local`.
 

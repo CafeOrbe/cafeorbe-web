@@ -19,7 +19,7 @@ const { sockets, SalaSocketFalso } = vi.hoisted(() => {
     cerrado = false
     constructor(
       readonly subastaId: string,
-      readonly token: string,
+      readonly obtenerTicket: () => Promise<string>,
       readonly oyentes: Oyentes,
     ) {
       sockets.push(this)
@@ -41,7 +41,7 @@ const { sockets, SalaSocketFalso } = vi.hoisted(() => {
 
 vi.mock('../../shared/ws/salaSocket', () => ({ SalaSocket: SalaSocketFalso }))
 vi.mock('../../shared/api/endpoints', () => ({
-  api: { detalle: vi.fn(), estadoTransmision: vi.fn(), saldo: vi.fn(), iniciarSubasta: vi.fn() },
+  api: { detalle: vi.fn(), estadoTransmision: vi.fn(), saldo: vi.fn(), iniciarSubasta: vi.fn(), ticketWs: vi.fn() },
 }))
 // El video (LiveKit) tiene sus propias pruebas; aquí solo importa qué le pide la sala.
 vi.mock('./VideoLive', () => ({
@@ -101,7 +101,8 @@ describe('SalaPage · entrada a la sala', () => {
     await esperar()
 
     expect(socket().subastaId).toBe('s1')
-    expect(socket().token).toBe('token-u-ana')
+    // SEG-04: el socket no recibe el token de sesión, sino cómo pedir un ticket de un solo uso.
+    expect(socket().obtenerTicket).toBe(api.ticketWs)
     expect(screen.getByRole('heading', { name: 'Geisha lavado' })).toBeTruthy()
     expect(screen.getByText('Subasta de Luis')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Geisha' })).toBeTruthy()

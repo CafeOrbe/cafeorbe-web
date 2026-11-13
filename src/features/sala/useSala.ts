@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { api } from '../../shared/api/endpoints'
 import { ApiError } from '../../shared/api/client'
 import { refrescarSaldo } from '../../shared/ui/SaldoOrbes'
+import { EVENTO_EXPIRADA } from '../../shared/session'
 import { SalaSocket } from '../../shared/ws/salaSocket'
 import { desfaseConElServidor } from './reloj'
 import { estadoInicial, salaReducer } from './salaReducer'
@@ -49,7 +50,8 @@ export function useSala(subastaId: string, token: string) {
     // HU-05: la sala no espera al WebSocket para mostrar el lote. Si el realtime-gateway no responde o rechaza
     // la conexión, se ve el lote (o el error) en lugar de quedarse cargando.
     void recargar()
-    const s = new SalaSocket(subastaId, token, {
+    // SEG-04: cada conexión (y cada reconexión) usa un ticket nuevo de un solo uso, nunca el token de sesión.
+    const s = new SalaSocket(subastaId, api.ticketWs, {
       mensaje: (mensaje) => {
         dispatch({ tipo: 'MENSAJE', mensaje })
         // Cada puja aceptada trae cuántas van. Si salta más de una, se perdió alguna en el camino: se pide el
@@ -69,9 +71,11 @@ export function useSala(subastaId: string, token: string) {
         dispatch({ tipo: 'CONEXION', estado: conexion })
         if (conexion === 'abierta') void recargar()
       },
+      // SEG-05: el servidor cortó la conexión porque la sesión se cerró o venció: se sale de la sesión local.
+      sesionTerminada: () => window.dispatchEvent(new Event(EVENTO_EXPIRADA)),
     })
     socket.current = s
-    s.conectar()
+    void s.conectar()
     return () => {
       s.cerrar()
       socket.current = null

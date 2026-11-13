@@ -7,20 +7,8 @@ import {
   numeroPositivo,
   validarCrearSubasta,
   validarFicha,
-  validarNombre,
   validarReglas,
 } from './validators'
-
-describe('HU-01 · validarNombre', () => {
-  it('rechaza el nombre vacío o de solo espacios con El nombre es obligatorio', () => {
-    expect(validarNombre('')).toBe(MSG_NOMBRE_OBLIGATORIO)
-    expect(validarNombre('   ')).toBe(MSG_NOMBRE_OBLIGATORIO)
-  })
-
-  it('acepta un nombre con contenido', () => {
-    expect(validarNombre('Ana')).toBeNull()
-  })
-})
 
 describe('HU-08 · validarCrearSubasta', () => {
   const ahora = new Date('2026-09-21T15:00:00')

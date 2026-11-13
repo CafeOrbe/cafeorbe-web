@@ -15,7 +15,6 @@ describe('api', () => {
     const reglas = { duracionMinutos: 10, precioBase: 100, incrementoMinimo: 10 }
     const subasta = { nombre: 'Lote', descripcion: '', fechaInicio: '2026-10-05T15:00:00.000Z' }
 
-    api.iniciarSesion('Ana', 'COMPRADOR')
     api.saldo()
     api.ganancias()
     api.misSubastas()
@@ -32,7 +31,6 @@ describe('api', () => {
     api.credencialesTransmision('s1')
 
     expect(vi.mocked(peticion).mock.calls).toEqual([
-      ['POST', '/api/sesion', { nombre: 'Ana', rol: 'COMPRADOR' }],
       ['GET', '/api/orbes/saldo'],
       ['GET', '/api/orbes/ganancias'],
       ['GET', '/api/subastas/mias'],
@@ -53,5 +51,20 @@ describe('api', () => {
   it('Hallazgo 12 · el aviso de detener al salir no espera respuesta', () => {
     api.detenerTransmisionAlSalir('s1')
     expect(peticionAlSalir).toHaveBeenCalledWith('POST', '/api/streaming/subastas/s1/detener')
+  })
+
+  it('SEG-01, SEG-04 y SEG-05 · Google, ticket del WebSocket y cierre de sesión en el servidor', async () => {
+    vi.mocked(peticion).mockResolvedValueOnce({ token: 't', usuario: {}, nuevo: false })
+    vi.mocked(peticion).mockResolvedValueOnce({ ticket: 'ticket-1', expiraEn: '2026-11-10T10:00:30Z' })
+
+    await api.iniciarSesionConGoogle('id-token', 'SUBASTADOR')
+    expect(await api.ticketWs()).toBe('ticket-1')
+    api.cerrarSesion()
+
+    expect(vi.mocked(peticion).mock.calls).toEqual([
+      ['POST', '/api/sesion/google', { idToken: 'id-token', rol: 'SUBASTADOR' }],
+      ['POST', '/api/sesion/ticket-ws'],
+    ])
+    expect(peticionAlSalir).toHaveBeenCalledWith('POST', '/api/sesion/cerrar')
   })
 })

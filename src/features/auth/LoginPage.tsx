@@ -1,45 +1,41 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { ArrowRight, Check, Coins, Gavel, HandCoins, Radio, type LucideIcon } from 'lucide-react'
+import { Check, Coins, Gavel, HandCoins, Radio, type LucideIcon } from 'lucide-react'
 import type { Rol } from '../../shared/api/types'
 import { rutaInicio } from '../../shared/routes'
 import { useSesion } from '../../shared/session'
-import { Campo } from '../../shared/ui/Campo'
 import { Alerta } from '../../shared/ui/Estados'
 import { Lema, Marca } from '../../shared/ui/Marca'
 import { FondoCafetal } from '../../shared/ui/FondoCafetal'
-import { validarNombre } from '../../shared/validators'
+import { BotonGoogle } from './BotonGoogle'
 
 const ROLES: { valor: Rol; titulo: string; descripcion: string; icono: LucideIcon }[] = [
   { valor: 'COMPRADOR', titulo: 'Comprador', descripcion: 'Participa en subastas y realiza tus pujas', icono: HandCoins },
   { valor: 'SUBASTADOR', titulo: 'Subastador', descripcion: 'Crea, transmite y administra tus subastas', icono: Radio },
 ]
 
-/** HU-01: acceso con nombre y rol. */
+/**
+ * HU-01 y SEG-01: el único acceso es con una cuenta de Google (proveedor de identidad externo). No hay usuario y
+ * contraseña propios ni acceso por nombre: la persona elige el rol y Google comprueba quién es.
+ */
 export function LoginPage() {
-  const { usuario, iniciarSesion } = useSesion()
+  const { usuario, iniciarSesionConGoogle } = useSesion()
   const navegar = useNavigate()
-  const [nombre, setNombre] = useState('')
   const [rol, setRol] = useState<Rol | null>(null)
-  const [errorNombre, setErrorNombre] = useState<string | null>(null)
   const [errorServidor, setErrorServidor] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
 
   if (usuario) return <Navigate to={rutaInicio(usuario.rol)} replace />
 
-  async function enviar(evento: FormEvent): Promise<void> {
-    evento.preventDefault()
-    const error = validarNombre(nombre)
-    setErrorNombre(error)
+  async function entrarConGoogle(idToken: string): Promise<void> {
+    if (!rol) return
     setErrorServidor(null)
-    if (error || !rol) return
-
     setEnviando(true)
     try {
-      const u = await iniciarSesion(nombre.trim(), rol)
+      const u = await iniciarSesionConGoogle(idToken, rol)
       void navegar(rutaInicio(u.rol), { replace: true })
     } catch (e) {
-      setErrorServidor(e instanceof Error ? e.message : 'No se pudo iniciar sesión')
+      setErrorServidor(e instanceof Error ? e.message : 'No se pudo iniciar sesión con Google')
       setEnviando(false)
     }
   }
@@ -78,7 +74,7 @@ export function LoginPage() {
       </aside>
 
       <main className="acceso__panel">
-        <form className="acceso__tarjeta" onSubmit={enviar} noValidate>
+        <div className="acceso__tarjeta">
           <div className="acceso__marca-movil">
             <Marca />
           </div>
@@ -86,20 +82,6 @@ export function LoginPage() {
             <h1>Entra a la subasta</h1>
             <p className="acceso__lema">Participa en vivo y puja por cafés de origen</p>
           </div>
-
-          <Campo etiqueta="Nombre para la subasta" ayuda="Este nombre será visible para los demás participantes" error={errorNombre}>
-            <input
-              type="text"
-              value={nombre}
-              maxLength={50}
-              autoComplete="nickname"
-              placeholder="¿Cómo te verán en la sala?"
-              onChange={(e) => {
-                setNombre(e.target.value)
-                if (errorNombre) setErrorNombre(null)
-              }}
-            />
-          </Campo>
 
           <fieldset className="roles">
             <legend className="campo__etiqueta">¿Cómo quieres participar?</legend>
@@ -125,13 +107,19 @@ export function LoginPage() {
 
           {errorServidor && <Alerta>{errorServidor}</Alerta>}
 
-          <button type="submit" className="boton boton--primario boton--grande boton--ancho" disabled={!rol || nombre === '' || enviando}>
-            {enviando ? 'Entrando…' : 'Entrar a la sala'}
-            {!enviando && <ArrowRight aria-hidden="true" />}
-          </button>
+          {rol && (
+            <div className="acceso__google-bloque">
+              <p className="campo__etiqueta">Ingresa con tu cuenta de Google</p>
+              {enviando ? (
+                <p className="campo__ayuda">Entrando…</p>
+              ) : (
+                <BotonGoogle alObtenerCredencial={(t) => void entrarConGoogle(t)} alFallar={setErrorServidor} />
+              )}
+            </div>
+          )}
           {!rol && <p className="campo__ayuda">Selecciona un rol para continuar.</p>}
-          {rol && nombre === '' && <p className="campo__ayuda">Escribe tu nombre para continuar.</p>}
-        </form>
+          <p className="campo__ayuda">En la sala te verán con el nombre de tu cuenta de Google.</p>
+        </div>
       </main>
     </div>
   )

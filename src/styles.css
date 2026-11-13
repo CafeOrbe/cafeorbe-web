@@ -1666,6 +1666,20 @@ svg {
   color: var(--hoja-tinta);
 }
 
+/* SEG-01: bloque del acceso con Google; el botón oficial lo dibuja Google dentro de .acceso__google. */
+.acceso__google-bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.acceso__google {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 44px;
+}
+
 /* Foco y selección en dorado: el rojo queda reservado para los errores. */
 .acceso__tarjeta .campo input:focus {
   border-color: var(--oro-borde);
