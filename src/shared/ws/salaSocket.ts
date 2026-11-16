@@ -5,17 +5,26 @@ const INTERVALO_PING_MS = 15_000
 /** Si tras un PING no llega nada en este tiempo, la conexión se da por muerta. */
 const ESPERA_RESPUESTA_MS = 8_000
 /**
- * DIS-01: si la conexión no se abre en este tiempo se descarta y se reintenta. Mientras una réplica reinicia, el
+ * DIS-01: si la conexión no se abre a tiempo se descarta y se reintenta. Mientras una réplica reinicia, el
  * balanceador de Azure le sigue mandando parte de las conexiones y quedan colgadas "conectando"; sin este límite
  * el navegador espera su propio tiempo (decenas de segundos) antes de reintentar.
+ *
+ * El límite se adapta a la red del comprador: 3 veces lo que tardó en abrir la última conexión buena, entre
+ * ESPERA_CONEXION_MIN_MS y ESPERA_CONEXION_MAX_MS. Antes de la primera conexión se usa ESPERA_CONEXION_MS. Así,
+ * cerca del servidor un intento colgado cuesta menos de 1 s (caben más intentos en la ventana rápida) y con una
+ * red lenta el límite sube solo y la conexión no se descarta antes de poder abrir.
  */
 export const ESPERA_CONEXION_MS = 1_500
+export const ESPERA_CONEXION_MIN_MS = 800
+export const ESPERA_CONEXION_MAX_MS = 3_000
+const FACTOR_ESPERA_CONEXION = 3
 /**
- * DIS-01: los primeros reintentos son casi inmediatos. Si la mitad de las conexiones cae en la réplica que
- * reinicia, cada reintento rápido tiene otra oportunidad de llegar a la sana; la espera solo crece si el servidor
- * sigue sin responder después de varios intentos (caída real), para no saturarlo.
+ * DIS-01: durante los primeros 10 s después del corte se reintenta rápido y a ritmo constante. En la corrida de
+ * caos del 16 nov, la mitad de los intentos seguía cayendo en la réplica que reiniciaba: con la espera duplicándose
+ * desde el 4.º intento, un comprador con 5 intentos fallidos seguidos tardó 16,6 s en volver. A ritmo constante
+ * caben unos 9 intentos en 10 s. Pasada la ventana, la espera crece (caída real) para no saturar el servidor.
  */
-const REINTENTOS_RAPIDOS = 3
+export const VENTANA_RAPIDA_MS = 10_000
 const ESPERA_REINTENTO_RAPIDO_MS = 200
 /** SEG-05: el servidor cerró la conexión porque la sesión se cerró o venció. No tiene sentido reconectar. */
 export const CIERRE_SESION = 4401
@@ -66,13 +75,19 @@ function urlDeSalaSegura(subastaId: string, ticket: string): string {
 }
 
 /**
- * Cliente WebSocket único de la sala: pide un ticket nuevo antes de cada conexión, reconecta solo (primero rápido,
- * luego con espera creciente), mantiene la conexión viva y descarta los eventos repetidos o atrasados.
+ * Cliente WebSocket único de la sala: pide un ticket nuevo antes de cada conexión, reconecta solo (rápido durante
+ * los primeros 10 s, luego con espera creciente), mantiene la conexión viva y descarta los eventos repetidos o
+ * atrasados.
  */
 export class SalaSocket {
   private ws: WebSocket | null = null
   private cerrado = false
+  /** Reintentos lentos (con espera creciente) hechos después de la ventana rápida. */
   private intentos = 0
+  /** DIS-01: cuándo se perdió la conexión; marca el inicio de la ventana rápida. */
+  private desconectadoDesde: number | null = null
+  /** DIS-01: límite para que abra cada conexión, ajustado con la última conexión buena. */
+  private esperaConexion = ESPERA_CONEXION_MS
   private ultimaSecuencia = -1
   private temporizadorPing: number | undefined
   private temporizadorRespuesta: number | undefined
@@ -105,18 +120,24 @@ export class SalaSocket {
     if (this.cerrado) return
     const ws = new WebSocket(urlDeSalaSegura(this.subastaId, ticket))
     this.ws = ws
+    const abriendoDesde = Date.now()
     this.temporizadorConexion = window.setTimeout(() => {
       this.temporizadorConexion = undefined
       // No se abrió a tiempo: se descarta sin esperar su onclose (puede tardar) y se reintenta ya.
       ws.onclose = null
       ws.close()
       this.alCerrarse(ws)
-    }, ESPERA_CONEXION_MS)
+    }, this.esperaConexion)
 
     ws.onopen = () => {
       window.clearTimeout(this.temporizadorConexion)
       this.temporizadorConexion = undefined
+      this.esperaConexion = Math.min(
+        ESPERA_CONEXION_MAX_MS,
+        Math.max(ESPERA_CONEXION_MIN_MS, (Date.now() - abriendoDesde) * FACTOR_ESPERA_CONEXION),
+      )
       this.intentos = 0
+      this.desconectadoDesde = null
       this.oyentes.estado('abierta')
       this.temporizadorPing = window.setInterval(() => this.latir(ws), INTERVALO_PING_MS)
     }
@@ -178,11 +199,13 @@ export class SalaSocket {
 
   private reintentar(esperaFija?: number) {
     if (this.cerrado) return
-    const intento = this.intentos++
+    const ahora = Date.now()
+    this.desconectadoDesde ??= ahora
+    // Dentro de la ventana rápida, ritmo constante; después, 1 s, 2 s, 4 s, 8 s y el tope de 10 s.
     const base =
-      intento < REINTENTOS_RAPIDOS
+      ahora - this.desconectadoDesde < VENTANA_RAPIDA_MS
         ? ESPERA_REINTENTO_RAPIDO_MS
-        : Math.min(1000 * 2 ** (intento - REINTENTOS_RAPIDOS), 10_000)
+        : Math.min(1000 * 2 ** this.intentos++, 10_000)
     // Espera aleatoria añadida: si el servidor se reinicia, no reconectan todos los compradores a la vez.
     const jitter = (crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32) * (base * 0.3)
     const espera = esperaFija ?? base + Math.floor(jitter)
