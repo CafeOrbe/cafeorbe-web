@@ -110,7 +110,8 @@ describe('SalaSocket', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(oyentes.estado).toHaveBeenLastCalledWith('cerrada')
 
-    await vi.advanceTimersByTimeAsync(1000)
+    // Reintento rápido (200 ms) dentro de la ventana de 10 s.
+    await vi.advanceTimersByTimeAsync(200)
     expect(WebSocketFalso.instancias).toHaveLength(2)
     expect(oyentes.estado).toHaveBeenLastCalledWith('conectando')
   })
@@ -180,38 +181,87 @@ describe('SalaSocket', () => {
     expect(ultimo().enviados).toEqual(['{"tipo":"PUJAR","monto":110}'])
   })
 
-  it('DIS-01 · si la conexión se cae reintenta rápido 3 veces y luego con espera creciente, hasta 10 segundos', async () => {
+  /** Cierra la conexión actual y comprueba que la siguiente llega justo a los `espera` ms. */
+  async function cerrarYEsperar(espera: number) {
+    const antes = WebSocketFalso.instancias.length
+    ultimo().close()
+    await vi.advanceTimersByTimeAsync(espera - 1)
+    expect(WebSocketFalso.instancias).toHaveLength(antes)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(WebSocketFalso.instancias).toHaveLength(antes + 1)
+  }
+
+  it('DIS-01 · durante 10 s tras el corte reintenta cada 200 ms; después con espera creciente, hasta 10 s', async () => {
     const { socket, oyentes } = crear()
     await socket.conectar()
+    const corte = Date.now()
 
-    // Los 3 primeros reintentos son casi inmediatos (200 ms): si la mitad de las conexiones cae en una réplica que
-    // reinicia, cada uno tiene otra oportunidad de llegar a la sana. Después la espera se duplica: 1 s, 2 s, 4 s,
-    // 8 s y el tope de 10 s, para no saturar un servidor que de verdad está caído.
-    for (const espera of [200, 200, 200, 1000, 2000, 4000, 8000, 10_000, 10_000]) {
-      const antes = WebSocketFalso.instancias.length
-      ultimo().close()
-      expect(oyentes.estado).toHaveBeenLastCalledWith('cerrada')
-
-      await vi.advanceTimersByTimeAsync(espera - 1)
-      expect(WebSocketFalso.instancias).toHaveLength(antes)
-      await vi.advanceTimersByTimeAsync(1)
-      expect(WebSocketFalso.instancias).toHaveLength(antes + 1)
+    // Ventana rápida: ritmo constante, sin duplicar la espera, mientras no pasen 10 s desde el corte. Si la mitad
+    // de los intentos cae en una réplica que reinicia, cada uno es otra oportunidad de llegar a la sana.
+    let rapidos = 0
+    while (Date.now() - corte < 10_000) {
+      await cerrarYEsperar(200)
+      expect(oyentes.estado).toHaveBeenLastCalledWith('conectando')
+      rapidos++
     }
+    expect(rapidos).toBe(50)
+
+    // Pasada la ventana, caída real: 1 s, 2 s, 4 s, 8 s y el tope de 10 s, para no saturar el servidor.
+    for (const espera of [1000, 2000, 4000, 8000, 10_000, 10_000]) await cerrarYEsperar(espera)
   })
 
-  it('al abrir se reinicia la espera de reconexión', async () => {
+  it('al abrir se reinicia la ventana rápida', async () => {
     const { socket } = crear()
     await socket.conectar()
-    for (const espera of [200, 200, 200, 1000]) {
-      ultimo().close()
-      await vi.advanceTimersByTimeAsync(espera)
-    }
-    // Tras 4 caídas la espera ya va en 2 s; al abrir vuelve a empezar con el reintento rápido.
+    const corte = Date.now()
+    while (Date.now() - corte < 10_000) await cerrarYEsperar(200)
+    await cerrarYEsperar(1000)
+    await cerrarYEsperar(2000)
+
+    // Tras abrir, un corte nuevo vuelve a empezar con los reintentos rápidos.
+    ultimo().abrir()
+    await cerrarYEsperar(200)
+  })
+
+  it('DIS-01 · el límite para abrir se adapta a la red: 3 veces la última conexión buena, entre 0,8 y 3 s', async () => {
+    const { socket } = crear()
+    await socket.conectar()
+    // Red lenta: la primera conexión tarda 900 ms en abrir, así que el límite pasa a 2,7 s.
+    await vi.advanceTimersByTimeAsync(900)
     ultimo().abrir()
     ultimo().close()
     await vi.advanceTimersByTimeAsync(200)
+    const lenta = ultimo()
+    await vi.advanceTimersByTimeAsync(2_699)
+    expect(lenta.readyState).toBe(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(lenta.readyState).toBe(3)
 
-    expect(WebSocketFalso.instancias).toHaveLength(6)
+    // Red cercana: abre al instante y el límite baja al mínimo de 0,8 s.
+    await vi.advanceTimersByTimeAsync(200)
+    ultimo().abrir()
+    ultimo().close()
+    await vi.advanceTimersByTimeAsync(200)
+    const cercana = ultimo()
+    await vi.advanceTimersByTimeAsync(799)
+    expect(cercana.readyState).toBe(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(cercana.readyState).toBe(3)
+  })
+
+  it('DIS-01 · con una red muy lenta el límite no pasa de 3 s', async () => {
+    const { socket } = crear()
+    await socket.conectar()
+    await vi.advanceTimersByTimeAsync(1_400)
+    ultimo().abrir()
+    ultimo().close()
+    await vi.advanceTimersByTimeAsync(200)
+    const colgada = ultimo()
+
+    await vi.advanceTimersByTimeAsync(2_999)
+    expect(colgada.readyState).toBe(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(colgada.readyState).toBe(3)
   })
 
   it('DIS-01 · una conexión que no se abre en 1,5 s se descarta y se reintenta (réplica que reinicia)', async () => {
@@ -258,6 +308,27 @@ describe('SalaSocket', () => {
     await vi.advanceTimersByTimeAsync(0)
     ultimo().abrir()
 
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+    expect(Date.now() - inicio).toBeLessThan(10_000)
+  })
+
+  it('DIS-01 · aun con 8 intentos colgados seguidos (el caso de 16,6 s del 16 nov), reconecta en menos de 10 s', async () => {
+    const { socket, oyentes } = crear()
+    await socket.conectar()
+    ultimo().abrir() // conexión cercana: el límite para abrir queda en 0,8 s
+    const inicio = Date.now()
+    ultimo().cerrarConCodigo(1006)
+
+    for (let i = 0; i < 8; i++) {
+      while (oyentes.estado.mock.lastCall?.[0] !== 'conectando') await vi.advanceTimersByTimeAsync(10)
+      const colgada = ultimo()
+      while (colgada.readyState !== 3) await vi.advanceTimersByTimeAsync(10)
+    }
+    while (oyentes.estado.mock.lastCall?.[0] !== 'conectando') await vi.advanceTimersByTimeAsync(10)
+    await vi.advanceTimersByTimeAsync(0)
+    ultimo().abrir()
+
+    expect(WebSocketFalso.instancias).toHaveLength(10)
     expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
     expect(Date.now() - inicio).toBeLessThan(10_000)
   })
