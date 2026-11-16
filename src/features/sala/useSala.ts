@@ -22,23 +22,27 @@ export function useSala(subastaId: string, token: string) {
   const pujasConocidas = useRef<number | null>(null)
   pujasConocidas.current = estado.detalle?.cantidadPujas ?? null
 
+  // Eventos de transmisión que la sala ya aplicó: una consulta REST que salió antes de uno de ellos se descarta.
+  const eventosDeTransmision = useRef(0)
+  eventosDeTransmision.current = estado.eventosDeTransmision
+
   const recargar = useCallback(async () => {
+    // La transmisión se consulta aparte: si el streaming-service tarda, el lote y las pujas no lo esperan.
+    // Si la consulta falla no se sabe si hay transmisión: se conserva lo que la sala ya mostraba. Tratarlo
+    // como "sin transmisión" le cortaba el video al comprador por un fallo momentáneo de red.
+    const eventosAlConsultar = eventosDeTransmision.current
+    api.estadoTransmision(subastaId).then(
+      (transmision) => dispatch({ tipo: 'TRANSMISION', activa: transmision.transmitiendo, eventosAlConsultar }),
+      () => undefined,
+    )
     try {
       const enviadoEn = Date.now()
-      let recibidoEn = enviadoEn
-      const [detalle, transmision] = await Promise.all([
-        api.detalle(subastaId).then((d) => {
-          recibidoEn = Date.now()
-          return d
-        }),
-        // Si la consulta falla no se sabe si hay transmisión: se conserva lo que la sala ya mostraba. Tratarlo
-        // como "sin transmisión" le cortaba el video al comprador por un fallo momentáneo de red.
-        api.estadoTransmision(subastaId).catch(() => null),
-      ])
+      const detalle = await api.detalle(subastaId)
+      const recibidoEn = Date.now()
       // HU-17: la hora del servidor corresponde, más o menos, a la mitad del viaje de la petición.
       const desfaseMs = desfaseConElServidor(detalle.horaServidor, (enviadoEn + recibidoEn) / 2)
+      // El reducer une este detalle con lo que ya llegó en vivo: una respuesta atrasada no hace retroceder la sala.
       dispatch({ tipo: 'DETALLE', detalle, desfaseMs })
-      if (transmision) dispatch({ tipo: 'TRANSMISION', activa: transmision.transmitiendo })
     } catch (e) {
       // La subasta no existe: el realtime-gateway rechaza la conexión, no tiene sentido seguir reintentando.
       if (e instanceof ApiError && e.status === 404) socket.current?.cerrar()

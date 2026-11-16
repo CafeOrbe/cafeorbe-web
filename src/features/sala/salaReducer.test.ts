@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Detalle } from '../../shared/api/types'
-import { estadoInicial, salaReducer, type SalaEstado } from './salaReducer'
+import { estadoInicial, reconciliar, salaReducer, type SalaEstado } from './salaReducer'
 
 const detalleEnCurso: Detalle = {
   id: 's1',
@@ -191,5 +191,59 @@ describe('salaReducer', () => {
   it('una subasta que ya estaba cerrada al entrar no tiene anuncio en vivo', () => {
     const yaCerrada = salaReducer(estadoInicial, { tipo: 'DETALLE', detalle: { ...detalleEnCurso, estado: 'FINALIZADA' } })
     expect(yaCerrada.cierre).toBeNull()
+  })
+
+  describe('REST atrasado frente a eventos en vivo', () => {
+    const conPuja = salaReducer(conDetalle, pujaAceptada(120, 'bruno', 'p1'))
+
+    it('un detalle REST anterior a una puja no devuelve precio, líder, conteo ni historial', () => {
+      const r = salaReducer(conPuja, { tipo: 'DETALLE', detalle: detalleEnCurso })
+      expect(r.detalle?.precioActual).toBe(120)
+      expect(r.detalle?.siguienteMinimo).toBe(130)
+      expect(r.detalle?.lider?.nombre).toBe('bruno')
+      expect(r.detalle?.cantidadPujas).toBe(1)
+      expect(r.detalle?.ultimasPujas.map((p) => p.id)).toEqual(['p1'])
+    })
+
+    it('un detalle REST más nuevo sí se aplica', () => {
+      const nuevo = { ...detalleEnCurso, precioActual: 150, siguienteMinimo: 160, cantidadPujas: 3, lider: { id: 'u-ana', nombre: 'ana' } }
+      const r = salaReducer(conPuja, { tipo: 'DETALLE', detalle: nuevo })
+      expect(r.detalle?.precioActual).toBe(150)
+      expect(r.detalle?.cantidadPujas).toBe(3)
+    })
+
+    it('el estado no retrocede: un REST "EN_CURSO" no reabre una subasta que ya cerró en vivo', () => {
+      const cerrada = salaReducer(conPuja, {
+        tipo: 'MENSAJE',
+        mensaje: { tipo: 'SUBASTA_CERRADA', subastaId: 's1', datos: { estado: 'FINALIZADA', ganadorId: 'u-bruno', ganadorNombre: 'bruno', montoFinal: 120, cantidadPujas: 1 } },
+      })
+      const r = salaReducer(cerrada, { tipo: 'DETALLE', detalle: detalleEnCurso })
+      expect(r.detalle?.estado).toBe('FINALIZADA')
+    })
+
+    it('el estado no retrocede: un REST "PROGRAMADA" no deshace el inicio recibido en vivo', () => {
+      const programada = { ...detalleEnCurso, estado: 'PROGRAMADA' as const, horaInicio: null, horaFin: null }
+      const r = reconciliar(detalleEnCurso, programada)
+      expect(r.estado).toBe('EN_CURSO')
+      expect(r.horaFin).toBe(detalleEnCurso.horaFin)
+    })
+
+    it('una extensión en vivo no se pierde con un REST anterior', () => {
+      const extendida = { ...detalleEnCurso, extensiones: 1, horaFin: '2026-09-21T15:11:00Z' }
+      const r = reconciliar(extendida, detalleEnCurso)
+      expect(r.extensiones).toBe(1)
+      expect(r.horaFin).toBe('2026-09-21T15:11:00Z')
+    })
+
+    it('otra subasta reemplaza el detalle sin mezclar', () => {
+      const otra = { ...detalleEnCurso, id: 's2', precioActual: 50, cantidadPujas: 0 }
+      expect(reconciliar(conPuja.detalle, otra)).toBe(otra)
+    })
+
+    it('una consulta REST de transmisión hecha antes de un evento en vivo se ignora', () => {
+      const enVivo = salaReducer(conDetalle, { tipo: 'MENSAJE', mensaje: { tipo: 'TRANSMISION_INICIADA', subastaId: 's1', datos: {} } })
+      expect(salaReducer(enVivo, { tipo: 'TRANSMISION', activa: false, eventosAlConsultar: 0 }).transmitiendo).toBe(true)
+      expect(salaReducer(enVivo, { tipo: 'TRANSMISION', activa: false, eventosAlConsultar: 1 }).transmitiendo).toBe(false)
+    })
   })
 })
