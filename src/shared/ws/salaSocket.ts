@@ -4,6 +4,19 @@ const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8085'
 const INTERVALO_PING_MS = 15_000
 /** Si tras un PING no llega nada en este tiempo, la conexión se da por muerta. */
 const ESPERA_RESPUESTA_MS = 8_000
+/**
+ * DIS-01: si la conexión no se abre en este tiempo se descarta y se reintenta. Mientras una réplica reinicia, el
+ * balanceador de Azure le sigue mandando parte de las conexiones y quedan colgadas "conectando"; sin este límite
+ * el navegador espera su propio tiempo (decenas de segundos) antes de reintentar.
+ */
+export const ESPERA_CONEXION_MS = 1_500
+/**
+ * DIS-01: los primeros reintentos son casi inmediatos. Si la mitad de las conexiones cae en la réplica que
+ * reinicia, cada reintento rápido tiene otra oportunidad de llegar a la sana; la espera solo crece si el servidor
+ * sigue sin responder después de varios intentos (caída real), para no saturarlo.
+ */
+const REINTENTOS_RAPIDOS = 3
+const ESPERA_REINTENTO_RAPIDO_MS = 200
 /** SEG-05: el servidor cerró la conexión porque la sesión se cerró o venció. No tiene sentido reconectar. */
 export const CIERRE_SESION = 4401
 /** SEG-03: el usuario quedó bloqueado por abuso; el bloqueo dura 60 s. */
@@ -53,8 +66,8 @@ function urlDeSalaSegura(subastaId: string, ticket: string): string {
 }
 
 /**
- * Cliente WebSocket único de la sala: pide un ticket nuevo antes de cada conexión, reconecta solo con espera
- * creciente, mantiene la conexión viva y descarta los eventos repetidos o atrasados.
+ * Cliente WebSocket único de la sala: pide un ticket nuevo antes de cada conexión, reconecta solo (primero rápido,
+ * luego con espera creciente), mantiene la conexión viva y descarta los eventos repetidos o atrasados.
  */
 export class SalaSocket {
   private ws: WebSocket | null = null
@@ -64,6 +77,7 @@ export class SalaSocket {
   private temporizadorPing: number | undefined
   private temporizadorRespuesta: number | undefined
   private temporizadorReintento: number | undefined
+  private temporizadorConexion: number | undefined
 
   constructor(
     private readonly subastaId: string,
@@ -91,8 +105,17 @@ export class SalaSocket {
     if (this.cerrado) return
     const ws = new WebSocket(urlDeSalaSegura(this.subastaId, ticket))
     this.ws = ws
+    this.temporizadorConexion = window.setTimeout(() => {
+      this.temporizadorConexion = undefined
+      // No se abrió a tiempo: se descarta sin esperar su onclose (puede tardar) y se reintenta ya.
+      ws.onclose = null
+      ws.close()
+      this.alCerrarse(ws)
+    }, ESPERA_CONEXION_MS)
 
     ws.onopen = () => {
+      window.clearTimeout(this.temporizadorConexion)
+      this.temporizadorConexion = undefined
       this.intentos = 0
       this.oyentes.estado('abierta')
       this.temporizadorPing = window.setInterval(() => this.latir(ws), INTERVALO_PING_MS)
@@ -141,7 +164,9 @@ export class SalaSocket {
     this.ws = null
     window.clearInterval(this.temporizadorPing)
     window.clearTimeout(this.temporizadorRespuesta)
+    window.clearTimeout(this.temporizadorConexion)
     this.temporizadorRespuesta = undefined
+    this.temporizadorConexion = undefined
     this.oyentes.estado('cerrada')
     if (codigo === CIERRE_SESION) {
       this.cerrado = true
@@ -153,7 +178,11 @@ export class SalaSocket {
 
   private reintentar(esperaFija?: number) {
     if (this.cerrado) return
-    const base = Math.min(1000 * 2 ** this.intentos++, 10_000)
+    const intento = this.intentos++
+    const base =
+      intento < REINTENTOS_RAPIDOS
+        ? ESPERA_REINTENTO_RAPIDO_MS
+        : Math.min(1000 * 2 ** (intento - REINTENTOS_RAPIDOS), 10_000)
     // Espera aleatoria añadida: si el servidor se reinicia, no reconectan todos los compradores a la vez.
     const jitter = (crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32) * (base * 0.3)
     const espera = esperaFija ?? base + Math.floor(jitter)
@@ -171,7 +200,9 @@ export class SalaSocket {
     window.clearInterval(this.temporizadorPing)
     window.clearTimeout(this.temporizadorRespuesta)
     window.clearTimeout(this.temporizadorReintento)
+    window.clearTimeout(this.temporizadorConexion)
     this.temporizadorRespuesta = undefined
+    this.temporizadorConexion = undefined
     this.ws?.close()
   }
 }
