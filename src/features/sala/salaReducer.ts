@@ -34,6 +34,11 @@ export interface SalaEstado {
   cierre: Cierre | null
   /** HU-24: Orbes que el Subastador acaba de recibir por esta subasta; null si no hubo abono. */
   abono: number | null
+  /**
+   * Eventos de transmisión recibidos por el WebSocket. Una consulta REST del estado de la transmisión que salió
+   * antes del último evento trae un dato viejo y no debe pisarlo.
+   */
+  eventosDeTransmision: number
 }
 
 export const estadoInicial: SalaEstado = {
@@ -48,18 +53,68 @@ export const estadoInicial: SalaEstado = {
   extension: null,
   cierre: null,
   abono: null,
+  eventosDeTransmision: 0,
 }
 
 export type Accion =
   | { tipo: 'DETALLE'; detalle: Detalle; desfaseMs?: number }
   | { tipo: 'ERROR_DE_CARGA'; mensaje: string }
   | { tipo: 'CONEXION'; estado: EstadoConexion }
-  | { tipo: 'TRANSMISION'; activa: boolean }
+  | { tipo: 'TRANSMISION'; activa: boolean; eventosAlConsultar?: number }
   | { tipo: 'MENSAJE'; mensaje: MensajeSala }
   | { tipo: 'LIMPIAR_AVISO' }
   | { tipo: 'LIMPIAR_EXTENSION' }
 
 const MAX_PUJAS_VISIBLES = 10
+
+/** Orden en que avanza una subasta: nunca vuelve atrás. */
+const AVANCE: Record<EstadoSubasta, number> = { PROGRAMADA: 0, EN_CURSO: 1, FINALIZADA: 2, DESIERTA: 2 }
+
+/**
+ * Une el detalle que llega por REST con lo que la sala ya sabe por el WebSocket. La respuesta REST puede haber
+ * salido del servidor antes que una puja, una extensión o un cambio de estado que ya llegaron en vivo: en ese caso
+ * se toma lo demás del REST (ficha, reglas, hora del servidor), pero precio, pujas y estado no retroceden.
+ */
+export function reconciliar(actual: Detalle | null, rest: Detalle): Detalle {
+  if (!actual || actual.id !== rest.id) return rest
+  let resultado = rest
+
+  if (AVANCE[actual.estado] > AVANCE[rest.estado]) {
+    resultado = {
+      ...resultado,
+      estado: actual.estado,
+      horaInicio: actual.horaInicio,
+      horaFin: actual.horaFin,
+      segundosRestantes: actual.segundosRestantes,
+    }
+  }
+
+  const pujasEnVivoAdelante =
+    actual.cantidadPujas > rest.cantidadPujas ||
+    (actual.precioActual !== null && rest.precioActual !== null && actual.precioActual > rest.precioActual)
+  if (pujasEnVivoAdelante) {
+    resultado = {
+      ...resultado,
+      precioActual: actual.precioActual,
+      siguienteMinimo: actual.siguienteMinimo,
+      lider: actual.lider,
+      cantidadPujas: Math.max(actual.cantidadPujas, rest.cantidadPujas),
+      ultimasPujas: unirPujas(actual.ultimasPujas, rest.ultimasPujas),
+    }
+  }
+
+  if (actual.extensiones > rest.extensiones) {
+    resultado = { ...resultado, extensiones: actual.extensiones, horaFin: actual.horaFin }
+  }
+  return resultado
+}
+
+/** Historial sin repetidos, de la puja más alta a la más baja. */
+function unirPujas(a: Puja[], b: Puja[]): Puja[] {
+  const porId = new Map<string, Puja>()
+  for (const p of [...a, ...b]) if (!porId.has(p.id)) porId.set(p.id, p)
+  return [...porId.values()].sort((x, y) => y.monto - x.monto).slice(0, MAX_PUJAS_VISIBLES)
+}
 
 /** Aplica los eventos de la sala al estado. Es pura para poder probarla sin navegador. */
 export function salaReducer(estado: SalaEstado, accion: Accion): SalaEstado {
@@ -69,7 +124,7 @@ export function salaReducer(estado: SalaEstado, accion: Accion): SalaEstado {
         ...estado,
         cargando: false,
         errorDeCarga: null,
-        detalle: accion.detalle,
+        detalle: reconciliar(estado.detalle, accion.detalle),
         desfaseMs: accion.desfaseMs ?? estado.desfaseMs,
       }
     case 'ERROR_DE_CARGA':
@@ -77,6 +132,10 @@ export function salaReducer(estado: SalaEstado, accion: Accion): SalaEstado {
     case 'CONEXION':
       return { ...estado, conexion: accion.estado }
     case 'TRANSMISION':
+      // La respuesta REST salió antes de un evento en vivo de la transmisión: el evento es más reciente.
+      if (accion.eventosAlConsultar !== undefined && accion.eventosAlConsultar !== estado.eventosDeTransmision) {
+        return estado
+      }
       return { ...estado, transmitiendo: accion.activa }
     case 'LIMPIAR_AVISO':
       return { ...estado, aviso: null }
@@ -94,9 +153,9 @@ function aplicarMensaje(estado: SalaEstado, mensaje: MensajeSala): SalaEstado {
       return { ...estado, conectados: Number(d.conectados) }
 
     case 'TRANSMISION_INICIADA':
-      return { ...estado, transmitiendo: true }
+      return { ...estado, transmitiendo: true, eventosDeTransmision: estado.eventosDeTransmision + 1 }
     case 'TRANSMISION_DETENIDA':
-      return { ...estado, transmitiendo: false }
+      return { ...estado, transmitiendo: false, eventosDeTransmision: estado.eventosDeTransmision + 1 }
 
     case 'SUBASTA_INICIADA': {
       if (!estado.detalle) return estado

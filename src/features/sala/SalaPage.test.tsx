@@ -232,6 +232,59 @@ describe('SalaPage · subasta en vivo', () => {
     expect(within(screen.getByRole('region', { name: 'Últimas pujas' })).getAllByRole('listitem')).toHaveLength(4)
   })
 
+  it('REST atrasado · llega una puja por WS mientras sigue pendiente una respuesta REST antigua: la sala no retrocede', async () => {
+    await abrir(detalle())
+
+    // Se reconecta y la consulta REST sale, pero tarda: su foto es de antes de la puja.
+    let responderViejo: (d: Detalle) => void = () => undefined
+    vi.mocked(api.detalle).mockReturnValueOnce(new Promise<Detalle>((r) => { responderViejo = r }))
+    await conexion('cerrada')
+    await conexion('abierta')
+
+    recibir('PUJA_ACEPTADA', {
+      pujaId: 'p1',
+      usuarioId: 'u-bruno',
+      usuarioNombre: 'Bruno',
+      monto: 120,
+      cantidadPujas: 1,
+      siguienteMinimo: 130,
+      ocurridaEn: '2026-10-05T15:01:00Z',
+    })
+    const precio = () =>
+      within(screen.getByRole('region', { name: 'Panel de puja' })).getByText('Precio actual').nextElementSibling?.textContent
+    expect(precio()).toBe('120 Orbes')
+
+    // Ahora llega la respuesta vieja (precio 100, sin pujas).
+    act(() => responderViejo(detalle()))
+    await esperar()
+
+    expect(precio()).toBe('120 Orbes')
+    const pujas = within(screen.getByRole('region', { name: 'Últimas pujas' }))
+    expect(pujas.getByText('1 pujas')).toBeTruthy()
+    expect(pujas.getAllByRole('listitem')).toHaveLength(1)
+  })
+
+  it('REST atrasado · la consulta de transmisión que salió antes de un evento en vivo no lo pisa', async () => {
+    await abrir(detalle())
+    let responderViejo: (t: { transmitiendo: boolean; sala: string }) => void = () => undefined
+    vi.mocked(api.estadoTransmision).mockReturnValueOnce(new Promise((r) => { responderViejo = r }))
+    await conexion('cerrada')
+    await conexion('abierta')
+
+    recibir('TRANSMISION_INICIADA')
+    expect(screen.getByTestId('video').textContent).toBe('receptor:en vivo')
+
+    act(() => responderViejo({ transmitiendo: false, sala: 's1' }))
+    await esperar()
+    expect(screen.getByTestId('video').textContent).toBe('receptor:en vivo')
+  })
+
+  it('la consulta de transmisión lenta no retrasa el lote ni las pujas', async () => {
+    vi.mocked(api.estadoTransmision).mockReturnValue(new Promise(() => undefined))
+    await abrir(detalle({ precioActual: 150, cantidadPujas: 0 }))
+    expect(within(screen.getByRole('region', { name: 'Panel de puja' })).getByText('Precio actual').nextElementSibling?.textContent).toBe('150 Orbes')
+  })
+
   it('mientras la subasta está en curso la sala se compara con el servidor cada minuto', async () => {
     vi.stubGlobal('crypto', {
       getRandomValues: (arr: Uint32Array) => {
