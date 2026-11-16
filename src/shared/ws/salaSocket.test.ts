@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SalaSocket, ticketValido } from './salaSocket'
+import { ESPERA_CONEXION_MS, SalaSocket, ticketValido } from './salaSocket'
 
 class WebSocketFalso {
   static readonly OPEN = 1
@@ -149,8 +149,8 @@ describe('SalaSocket', () => {
     await socket.conectar()
     ultimo().close()
 
-    // Espera base de 1 s más hasta un 30 % al azar: con 0,5 son 1150 ms.
-    await vi.advanceTimersByTimeAsync(1149)
+    // Primer reintento: base de 200 ms más hasta un 30 % al azar; con 0,5 son 230 ms.
+    await vi.advanceTimersByTimeAsync(229)
     expect(WebSocketFalso.instancias).toHaveLength(1)
     await vi.advanceTimersByTimeAsync(1)
     expect(WebSocketFalso.instancias).toHaveLength(2)
@@ -180,12 +180,14 @@ describe('SalaSocket', () => {
     expect(ultimo().enviados).toEqual(['{"tipo":"PUJAR","monto":110}'])
   })
 
-  it('si la conexión se cae reintenta con espera creciente, hasta 10 segundos', async () => {
+  it('DIS-01 · si la conexión se cae reintenta rápido 3 veces y luego con espera creciente, hasta 10 segundos', async () => {
     const { socket, oyentes } = crear()
     await socket.conectar()
 
-    // Cada caída sin haber llegado a abrir duplica la espera: 1 s, 2 s, 4 s, 8 s y luego el tope de 10 s.
-    for (const espera of [1000, 2000, 4000, 8000, 10_000, 10_000]) {
+    // Los 3 primeros reintentos son casi inmediatos (200 ms): si la mitad de las conexiones cae en una réplica que
+    // reinicia, cada uno tiene otra oportunidad de llegar a la sana. Después la espera se duplica: 1 s, 2 s, 4 s,
+    // 8 s y el tope de 10 s, para no saturar un servidor que de verdad está caído.
+    for (const espera of [200, 200, 200, 1000, 2000, 4000, 8000, 10_000, 10_000]) {
       const antes = WebSocketFalso.instancias.length
       ultimo().close()
       expect(oyentes.estado).toHaveBeenLastCalledWith('cerrada')
@@ -200,16 +202,64 @@ describe('SalaSocket', () => {
   it('al abrir se reinicia la espera de reconexión', async () => {
     const { socket } = crear()
     await socket.conectar()
-    ultimo().close()
-    await vi.advanceTimersByTimeAsync(1000)
-    ultimo().close()
-    await vi.advanceTimersByTimeAsync(2000)
-
+    for (const espera of [200, 200, 200, 1000]) {
+      ultimo().close()
+      await vi.advanceTimersByTimeAsync(espera)
+    }
+    // Tras 4 caídas la espera ya va en 2 s; al abrir vuelve a empezar con el reintento rápido.
     ultimo().abrir()
     ultimo().close()
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(200)
 
-    expect(WebSocketFalso.instancias).toHaveLength(4)
+    expect(WebSocketFalso.instancias).toHaveLength(6)
+  })
+
+  it('DIS-01 · una conexión que no se abre en 1,5 s se descarta y se reintenta (réplica que reinicia)', async () => {
+    const { socket, oyentes } = crear()
+    await socket.conectar()
+    const colgada = ultimo()
+
+    await vi.advanceTimersByTimeAsync(ESPERA_CONEXION_MS - 1)
+    expect(WebSocketFalso.instancias).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(colgada.readyState).toBe(3)
+    expect(oyentes.estado).toHaveBeenLastCalledWith('cerrada')
+
+    // Reintento rápido con un ticket nuevo.
+    await vi.advanceTimersByTimeAsync(200)
+    expect(WebSocketFalso.instancias).toHaveLength(2)
+    expect(ultimo()).not.toBe(colgada)
+  })
+
+  it('DIS-01 · si la conexión se abre a tiempo no se descarta', async () => {
+    const { socket, oyentes } = crear()
+    await socket.conectar()
+    ultimo().abrir()
+
+    await vi.advanceTimersByTimeAsync(ESPERA_CONEXION_MS * 2)
+    expect(WebSocketFalso.instancias).toHaveLength(1)
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+  })
+
+  it('DIS-01 · con la mitad de los intentos en una réplica que no responde, reconecta en menos de 10 s', async () => {
+    const { socket, oyentes } = crear()
+    await socket.conectar()
+    ultimo().abrir()
+    const inicio = Date.now()
+    ultimo().cerrarConCodigo(1012) // la réplica empieza a apagarse
+
+    // Peor caso razonable: 4 intentos seguidos caen en la réplica caída y quedan colgados; el 5.º llega a la sana.
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(10)
+      while (oyentes.estado.mock.lastCall?.[0] !== 'conectando') await vi.advanceTimersByTimeAsync(10)
+      await vi.advanceTimersByTimeAsync(ESPERA_CONEXION_MS)
+    }
+    while (oyentes.estado.mock.lastCall?.[0] !== 'conectando') await vi.advanceTimersByTimeAsync(10)
+    await vi.advanceTimersByTimeAsync(0)
+    ultimo().abrir()
+
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+    expect(Date.now() - inicio).toBeLessThan(10_000)
   })
 
   it('cerrar la sala detiene los PING y no vuelve a conectar', async () => {
