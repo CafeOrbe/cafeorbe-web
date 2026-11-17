@@ -223,6 +223,22 @@ describe('SalaSocket', () => {
     await cerrarYEsperar(200)
   })
 
+  /** Deja que los intentos colgados venzan hasta pasar la ventana rápida y devuelve el primer intento posterior. */
+  async function primerIntentoTrasLaVentana(corte: number) {
+    while (Date.now() - corte < 10_000) await vi.advanceTimersByTimeAsync(50)
+    const antes = WebSocketFalso.instancias.length
+    while (WebSocketFalso.instancias.length === antes) await vi.advanceTimersByTimeAsync(10)
+    return ultimo()
+  }
+
+  /** Comprueba que la conexión sigue intentando abrir hasta `limite` ms y se descarta justo ahí. */
+  async function seDescartaA(ws: WebSocketFalso, limite: number) {
+    await vi.advanceTimersByTimeAsync(limite - 1)
+    expect(ws.readyState).toBe(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(ws.readyState).toBe(3)
+  }
+
   it('DIS-01 · el límite para abrir se adapta a la red: 3 veces la última conexión buena, entre 0,8 y 3 s', async () => {
     const { socket } = crear()
     await socket.conectar()
@@ -230,12 +246,24 @@ describe('SalaSocket', () => {
     await vi.advanceTimersByTimeAsync(900)
     ultimo().abrir()
     ultimo().close()
+    const corte = Date.now()
+
+    // Dentro de la ventana rápida el límite no pasa de 1,5 s (caso de 10,1 s del 17 nov).
     await vi.advanceTimersByTimeAsync(200)
-    const lenta = ultimo()
-    await vi.advanceTimersByTimeAsync(2_699)
-    expect(lenta.readyState).toBe(0)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(lenta.readyState).toBe(3)
+    await seDescartaA(ultimo(), 1_500)
+
+    // Pasada la ventana vuelve el límite adaptativo completo: una red de verdad lenta termina conectando.
+    await seDescartaA(await primerIntentoTrasLaVentana(corte), 2_700)
+  })
+
+  it('DIS-01 · cerca del servidor el límite baja al mínimo de 0,8 s', async () => {
+    const { socket } = crear()
+    await socket.conectar()
+    await vi.advanceTimersByTimeAsync(900)
+    ultimo().abrir()
+    ultimo().close()
+    await vi.advanceTimersByTimeAsync(200)
+    await vi.advanceTimersByTimeAsync(1_500)
 
     // Red cercana: abre al instante y el límite baja al mínimo de 0,8 s.
     await vi.advanceTimersByTimeAsync(200)
@@ -249,19 +277,40 @@ describe('SalaSocket', () => {
     expect(cercana.readyState).toBe(3)
   })
 
-  it('DIS-01 · con una red muy lenta el límite no pasa de 3 s', async () => {
+  it('DIS-01 · con una red muy lenta el límite no pasa de 1,5 s en la ventana ni de 3 s después', async () => {
     const { socket } = crear()
     await socket.conectar()
     await vi.advanceTimersByTimeAsync(1_400)
     ultimo().abrir()
     ultimo().close()
-    await vi.advanceTimersByTimeAsync(200)
-    const colgada = ultimo()
+    const corte = Date.now()
 
-    await vi.advanceTimersByTimeAsync(2_999)
-    expect(colgada.readyState).toBe(0)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(colgada.readyState).toBe(3)
+    await vi.advanceTimersByTimeAsync(200)
+    await seDescartaA(ultimo(), 1_500)
+    await seDescartaA(await primerIntentoTrasLaVentana(corte), 3_000)
+  })
+
+  it('DIS-01 · con el límite en 3 s, tres intentos colgados ya no suman 10 s (caso del 17 nov)', async () => {
+    const { socket, oyentes } = crear()
+    await socket.conectar()
+    // La primera conexión fue lenta porque todos entraron a la vez: el límite quedó en 3 s.
+    await vi.advanceTimersByTimeAsync(1_000)
+    ultimo().abrir()
+    const inicio = Date.now()
+    ultimo().cerrarConCodigo(1006)
+
+    for (let i = 0; i < 3; i++) {
+      while (oyentes.estado.mock.lastCall?.[0] !== 'conectando') await vi.advanceTimersByTimeAsync(10)
+      const colgada = ultimo()
+      while (colgada.readyState !== 3) await vi.advanceTimersByTimeAsync(10)
+    }
+    while (oyentes.estado.mock.lastCall?.[0] !== 'conectando') await vi.advanceTimersByTimeAsync(10)
+    await vi.advanceTimersByTimeAsync(0)
+    ultimo().abrir()
+
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+    // Antes: 3 × 3 s + esperas ≈ 10 s. Ahora: 3 × 1,5 s + esperas < 6 s.
+    expect(Date.now() - inicio).toBeLessThan(6_000)
   })
 
   it('DIS-01 · una conexión que no se abre en 1,5 s se descarta y se reintenta (réplica que reinicia)', async () => {

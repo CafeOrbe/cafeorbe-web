@@ -17,6 +17,13 @@ const ESPERA_RESPUESTA_MS = 8_000
 export const ESPERA_CONEXION_MS = 1_500
 export const ESPERA_CONEXION_MIN_MS = 800
 export const ESPERA_CONEXION_MAX_MS = 3_000
+/**
+ * DIS-01: tope del límite durante la ventana rápida. En la corrida de caos del 17 nov, dos compradores cuya primera
+ * conexión fue lenta (los 60 entraron a la vez) tenían el límite en 2,9–3 s: tres intentos colgados en la réplica
+ * caída les costaron 9,7 y 10,1 s. Con este tope, cada intento colgado cuesta ≤ 1,7 s y caben al menos 5 en 10 s.
+ * Pasada la ventana vuelve a valer el límite adaptativo completo, para que una red de verdad lenta conecte.
+ */
+export const ESPERA_CONEXION_VENTANA_MAX_MS = 1_500
 const FACTOR_ESPERA_CONEXION = 3
 /**
  * DIS-01: durante los primeros 10 s después del corte se reintenta rápido y a ritmo constante. En la corrida de
@@ -121,13 +128,16 @@ export class SalaSocket {
     const ws = new WebSocket(urlDeSalaSegura(this.subastaId, ticket))
     this.ws = ws
     const abriendoDesde = Date.now()
+    const enVentanaRapida =
+      this.desconectadoDesde !== null && abriendoDesde - this.desconectadoDesde < VENTANA_RAPIDA_MS
+    const limite = enVentanaRapida ? Math.min(this.esperaConexion, ESPERA_CONEXION_VENTANA_MAX_MS) : this.esperaConexion
     this.temporizadorConexion = window.setTimeout(() => {
       this.temporizadorConexion = undefined
       // No se abrió a tiempo: se descarta sin esperar su onclose (puede tardar) y se reintenta ya.
       ws.onclose = null
       ws.close()
       this.alCerrarse(ws)
-    }, this.esperaConexion)
+    }, limite)
 
     ws.onopen = () => {
       window.clearTimeout(this.temporizadorConexion)
