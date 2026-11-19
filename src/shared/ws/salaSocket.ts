@@ -33,6 +33,15 @@ const FACTOR_ESPERA_CONEXION = 3
  */
 export const VENTANA_RAPIDA_MS = 10_000
 const ESPERA_REINTENTO_RAPIDO_MS = 200
+/**
+ * DIS-01: dentro de la ventana rápida, si la conexión no abrió en este tiempo se abre una segunda en paralelo (con
+ * su propio ticket) y se usa la primera que abra. Mientras una réplica reinicia, el ingreso de Azure manda la mitad
+ * de los intentos a esa réplica y quedan colgados: con un solo intento por ronda, la ronda falla el 50 % de las
+ * veces y en las corridas del 19 nov (2 réplicas) algún comprador tardó 12–25 s en volver. Con dos intentos la ronda
+ * falla solo si los dos caen en la réplica caída (25 %). Una conexión sana abre antes de este tiempo y no abre la
+ * segunda.
+ */
+export const ESPERA_RESPALDO_MS = 400
 /** SEG-05: el servidor cerró la conexión porque la sesión se cerró o venció. No tiene sentido reconectar. */
 export const CIERRE_SESION = 4401
 /** SEG-03: el usuario quedó bloqueado por abuso; el bloqueo dura 60 s. */
@@ -100,6 +109,9 @@ export class SalaSocket {
   private temporizadorRespuesta: number | undefined
   private temporizadorReintento: number | undefined
   private temporizadorConexion: number | undefined
+  /** DIS-01: conexión de respaldo que se abre en paralelo dentro de la ventana rápida. */
+  private respaldo: WebSocket | null = null
+  private temporizadorRespaldo: number | undefined
 
   constructor(
     private readonly subastaId: string,
@@ -139,18 +151,15 @@ export class SalaSocket {
       this.alCerrarse(ws)
     }, limite)
 
-    ws.onopen = () => {
-      window.clearTimeout(this.temporizadorConexion)
-      this.temporizadorConexion = undefined
-      this.esperaConexion = Math.min(
-        ESPERA_CONEXION_MAX_MS,
-        Math.max(ESPERA_CONEXION_MIN_MS, (Date.now() - abriendoDesde) * FACTOR_ESPERA_CONEXION),
-      )
-      this.intentos = 0
-      this.desconectadoDesde = null
-      this.oyentes.estado('abierta')
-      this.temporizadorPing = window.setInterval(() => this.latir(ws), INTERVALO_PING_MS)
+    this.preparar(ws, abriendoDesde)
+    if (enVentanaRapida) {
+      this.temporizadorRespaldo = window.setTimeout(() => void this.abrirRespaldo(ws), ESPERA_RESPALDO_MS)
     }
+  }
+
+  /** Conecta los eventos de la conexión que pasa a ser la actual. */
+  private preparar(ws: WebSocket, abriendoDesde: number) {
+    ws.onopen = () => this.alAbrir(ws, abriendoDesde)
     ws.onmessage = (evento) => {
       // Cualquier mensaje prueba que la conexión sigue viva.
       window.clearTimeout(this.temporizadorRespuesta)
@@ -172,6 +181,68 @@ export class SalaSocket {
       this.oyentes.mensaje(mensaje)
     }
     ws.onclose = (evento?: CloseEvent) => this.alCerrarse(ws, evento?.code)
+  }
+
+  private alAbrir(ws: WebSocket, abriendoDesde: number) {
+    window.clearTimeout(this.temporizadorConexion)
+    this.temporizadorConexion = undefined
+    this.descartarRespaldo()
+    this.esperaConexion = Math.min(
+      ESPERA_CONEXION_MAX_MS,
+      Math.max(ESPERA_CONEXION_MIN_MS, (Date.now() - abriendoDesde) * FACTOR_ESPERA_CONEXION),
+    )
+    this.intentos = 0
+    this.desconectadoDesde = null
+    this.oyentes.estado('abierta')
+    this.temporizadorPing = window.setInterval(() => this.latir(ws), INTERVALO_PING_MS)
+  }
+
+  /**
+   * DIS-01: abre una segunda conexión mientras la principal sigue sin abrir. Si abre primero, reemplaza a la
+   * principal; si no, se descarta junto con ella. Pide su propio ticket (son de un solo uso, SEG-04).
+   */
+  private async abrirRespaldo(principal: WebSocket) {
+    this.temporizadorRespaldo = undefined
+    const sigueEsperando = () => !this.cerrado && this.ws === principal && principal.readyState !== WebSocket.OPEN
+    if (!sigueEsperando()) return
+    let ticket: string
+    try {
+      const recibido = await this.obtenerTicket()
+      if (!ticketValido(recibido)) return
+      ticket = recibido
+    } catch {
+      return
+    }
+    if (!sigueEsperando()) return
+    const ws = new WebSocket(urlDeSalaSegura(this.subastaId, ticket))
+    this.respaldo = ws
+    const abriendoDesde = Date.now()
+    // No necesita límite propio: se descarta cuando la principal abre, vence o se cierra la sala.
+    ws.onclose = () => {
+      this.respaldo = null
+    }
+    ws.onopen = () => {
+      this.respaldo = null
+      // La principal sigue colgada: se descarta sin esperar su cierre y el respaldo pasa a ser la conexión.
+      principal.onopen = null
+      principal.onclose = null
+      principal.close()
+      this.ws = ws
+      this.preparar(ws, abriendoDesde)
+      this.alAbrir(ws, abriendoDesde)
+    }
+  }
+
+  private descartarRespaldo() {
+    window.clearTimeout(this.temporizadorRespaldo)
+    this.temporizadorRespaldo = undefined
+    const ws = this.respaldo
+    this.respaldo = null
+    if (ws) {
+      ws.onopen = null
+      ws.onclose = null
+      ws.close()
+    }
   }
 
   /**
@@ -198,6 +269,7 @@ export class SalaSocket {
     window.clearTimeout(this.temporizadorConexion)
     this.temporizadorRespuesta = undefined
     this.temporizadorConexion = undefined
+    this.descartarRespaldo()
     this.oyentes.estado('cerrada')
     if (codigo === CIERRE_SESION) {
       this.cerrado = true
@@ -236,6 +308,7 @@ export class SalaSocket {
     window.clearTimeout(this.temporizadorConexion)
     this.temporizadorRespuesta = undefined
     this.temporizadorConexion = undefined
+    this.descartarRespaldo()
     this.ws?.close()
   }
 }

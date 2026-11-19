@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ESPERA_CONEXION_MS, SalaSocket, ticketValido } from './salaSocket'
+import { ESPERA_CONEXION_MS, ESPERA_RESPALDO_MS, SalaSocket, ticketValido } from './salaSocket'
 
 class WebSocketFalso {
   static readonly OPEN = 1
@@ -135,7 +135,8 @@ describe('SalaSocket', () => {
     vieja.abrir()
     const avisar = vieja.onclose
     vieja.close = () => undefined
-    await vi.advanceTimersByTimeAsync(15_000 + 8_000 + 1000)
+    // Reconecta a los 200 ms; abre antes de que haga falta la conexión de respaldo.
+    await vi.advanceTimersByTimeAsync(15_000 + 8_000 + 200)
     ultimo().abrir()
 
     avisar?.()
@@ -377,7 +378,8 @@ describe('SalaSocket', () => {
     await vi.advanceTimersByTimeAsync(0)
     ultimo().abrir()
 
-    expect(WebSocketFalso.instancias).toHaveLength(10)
+    // 8 rondas colgadas, cada una con su conexión de respaldo, más la inicial y la que abre.
+    expect(WebSocketFalso.instancias).toHaveLength(18)
     expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
     expect(Date.now() - inicio).toBeLessThan(10_000)
   })
@@ -400,7 +402,7 @@ describe('SalaSocket', () => {
     await socket.conectar()
     ultimo().abrir()
     ultimo().close()
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(300)
 
     expect(obtenerTicket).toHaveBeenCalledTimes(2)
     expect(WebSocketFalso.instancias.map((w) => w.url)).toEqual([
@@ -434,7 +436,7 @@ describe('SalaSocket', () => {
     expect(WebSocketFalso.instancias).toHaveLength(0)
     expect(oyentes.estado).toHaveBeenLastCalledWith('conectando')
 
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(300)
     expect(WebSocketFalso.instancias).toHaveLength(1)
   })
 
@@ -489,6 +491,159 @@ describe('SalaSocket', () => {
     entregar('t')
     await conectando
     expect(WebSocketFalso.instancias).toHaveLength(0)
+  })
+
+
+  /** Abre la sala y corta la conexión, para quedar dentro de la ventana rápida con un intento recién creado. */
+  async function cortadaEnLaVentana() {
+    const contexto = crear()
+    await contexto.socket.conectar()
+    ultimo().abrir()
+    ultimo().cerrarConCodigo(1006)
+    await vi.advanceTimersByTimeAsync(200)
+    return contexto
+  }
+
+  it('DIS-01 · en la ventana rápida, si no abre en 400 ms abre una conexión de respaldo con su propio ticket', async () => {
+    const { obtenerTicket } = await cortadaEnLaVentana()
+    const principal = ultimo()
+
+    await vi.advanceTimersByTimeAsync(ESPERA_RESPALDO_MS - 1)
+    expect(WebSocketFalso.instancias).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(WebSocketFalso.instancias).toHaveLength(3)
+    expect(ultimo()).not.toBe(principal)
+    // Inicial, principal y respaldo: cada una con un ticket nuevo (SEG-04).
+    expect(obtenerTicket).toHaveBeenCalledTimes(3)
+  })
+
+  it('DIS-01 · si el respaldo abre primero reemplaza a la principal colgada, que se descarta', async () => {
+    const { socket, oyentes } = await cortadaEnLaVentana()
+    const principal = ultimo()
+    await vi.advanceTimersByTimeAsync(ESPERA_RESPALDO_MS)
+    const respaldo = ultimo()
+
+    respaldo.abrir()
+
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+    expect(principal.readyState).toBe(3)
+    expect(socket.enviar({ tipo: 'PUJAR', monto: 110 })).toBe(true)
+    expect(respaldo.enviados).toEqual(['{"tipo":"PUJAR","monto":110}'])
+    // La principal descartada ya no reconecta ni cambia el estado si llega a abrir o cerrarse tarde.
+    principal.onopen?.()
+    principal.onclose?.()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+    expect(WebSocketFalso.instancias).toHaveLength(3)
+  })
+
+  it('DIS-01 · el respaldo recibe los eventos de la sala y sus PING mantienen la conexión', async () => {
+    const { oyentes } = await cortadaEnLaVentana()
+    await vi.advanceTimersByTimeAsync(ESPERA_RESPALDO_MS)
+    const respaldo = ultimo()
+    respaldo.abrir()
+
+    respaldo.onmessage?.({ data: '{"tipo":"CONECTADOS","subastaId":"s1","datos":{"conectados":3}}' })
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(oyentes.mensaje).toHaveBeenCalledTimes(1)
+    expect(respaldo.enviados).toEqual(['{"tipo":"PING"}'])
+  })
+
+  it('DIS-01 · si la principal abre primero el respaldo se cierra', async () => {
+    const { oyentes } = await cortadaEnLaVentana()
+    const principal = ultimo()
+    await vi.advanceTimersByTimeAsync(ESPERA_RESPALDO_MS)
+    const respaldo = ultimo()
+
+    principal.abrir()
+
+    expect(respaldo.readyState).toBe(3)
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+    respaldo.onopen?.()
+    expect(WebSocketFalso.instancias).toHaveLength(3)
+  })
+
+  it('DIS-01 · una conexión que abre antes de 400 ms no abre respaldo', async () => {
+    await cortadaEnLaVentana()
+    ultimo().abrir()
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(WebSocketFalso.instancias).toHaveLength(2)
+  })
+
+  it('DIS-01 · fuera de la ventana rápida (primera conexión) no se abre respaldo', async () => {
+    const { socket } = crear()
+    await socket.conectar()
+
+    await vi.advanceTimersByTimeAsync(ESPERA_CONEXION_MS - 1)
+    expect(WebSocketFalso.instancias).toHaveLength(1)
+  })
+
+  it('DIS-01 · si principal y respaldo quedan colgados, se descartan los dos y la ronda siguiente vuelve a intentar', async () => {
+    const { oyentes } = await cortadaEnLaVentana()
+    const principal = ultimo()
+    await vi.advanceTimersByTimeAsync(ESPERA_RESPALDO_MS)
+    const respaldo = ultimo()
+
+    while (principal.readyState !== 3) await vi.advanceTimersByTimeAsync(10)
+    expect(respaldo.readyState).toBe(3)
+    expect(oyentes.estado).toHaveBeenLastCalledWith('cerrada')
+
+    await vi.advanceTimersByTimeAsync(200)
+    expect(WebSocketFalso.instancias).toHaveLength(4)
+    expect(oyentes.estado).toHaveBeenLastCalledWith('conectando')
+  })
+
+  it('cerrar la sala descarta también la conexión de respaldo', async () => {
+    const { socket } = await cortadaEnLaVentana()
+    await vi.advanceTimersByTimeAsync(ESPERA_RESPALDO_MS)
+    const respaldo = ultimo()
+
+    socket.cerrar()
+
+    expect(respaldo.readyState).toBe(3)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(WebSocketFalso.instancias).toHaveLength(3)
+  })
+
+  it('un ticket de respaldo inválido no abre conexión y la principal sigue', async () => {
+    const { socket, obtenerTicket, oyentes } = crear()
+    await socket.conectar()
+    ultimo().abrir()
+    ultimo().cerrarConCodigo(1006)
+    obtenerTicket.mockResolvedValueOnce('Tk_9-xZ').mockResolvedValueOnce('mal ticket')
+    await vi.advanceTimersByTimeAsync(200 + ESPERA_RESPALDO_MS)
+    expect(WebSocketFalso.instancias).toHaveLength(2)
+
+    ultimo().abrir()
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+  })
+
+
+  it('DIS-01 · si el servidor cierra el respaldo antes de abrir, la principal sigue y puede abrir', async () => {
+    const { oyentes } = await cortadaEnLaVentana()
+    const principal = ultimo()
+    await vi.advanceTimersByTimeAsync(ESPERA_RESPALDO_MS)
+    ultimo().cerrarConCodigo(1006)
+
+    principal.abrir()
+
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
+    expect(WebSocketFalso.instancias).toHaveLength(3)
+  })
+
+  it('si no se pudo pedir el ticket del respaldo no abre conexión y la principal sigue', async () => {
+    const { socket, obtenerTicket, oyentes } = crear()
+    await socket.conectar()
+    ultimo().abrir()
+    ultimo().cerrarConCodigo(1006)
+    obtenerTicket.mockResolvedValueOnce('Tk_9-xZ').mockRejectedValueOnce(new Error('sin red'))
+    await vi.advanceTimersByTimeAsync(200 + ESPERA_RESPALDO_MS)
+    expect(WebSocketFalso.instancias).toHaveLength(2)
+
+    ultimo().abrir()
+    expect(oyentes.estado).toHaveBeenLastCalledWith('abierta')
   })
 
 })
