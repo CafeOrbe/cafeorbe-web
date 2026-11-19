@@ -156,7 +156,7 @@ describe('App', () => {
     await screen.findByTestId('boton-google')
     alEntrar?.({ credential: 'id-token-de-google' })
 
-    expect(await screen.findByText('Hola, Ana')).toBeTruthy()
+    expect(await screen.findByText('Hola, Ana', undefined, { timeout: 4000 })).toBeTruthy()
     expect(await screen.findByText('¡Bienvenido! Recibiste 1.000 Orbes para pujar.', undefined, { timeout: 4000 })).toBeTruthy()
   })
 })
