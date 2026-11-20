@@ -13,6 +13,9 @@ import { FondoHero } from '../../shared/ui/FondoHero'
 import { TarjetaLote } from '../../shared/ui/TarjetaLote'
 import { useAvisoDeRuta } from '../../shared/ui/useAvisoDeRuta'
 
+/** Cada cuánto se actualiza el listado de subastas disponibles mientras la página está abierta. */
+const ACTUALIZAR_CADA_MS = 5_000
+
 function resumenDeSubastas(enVivo: number, proximas: number, cargando: boolean): string {
   if (cargando) return 'Buscando subastas…'
   const partes: string[] = []
@@ -29,14 +32,31 @@ export function HomeCompradorPage() {
   const [error, setError] = useState<string | null>(null)
   useAvisoDeRuta()
 
+  // El listado se vuelve a pedir cada pocos segundos mientras la pestaña está visible, y al volver a ella:
+  // así una subasta recién creada o recién iniciada aparece sin recargar la página.
   useEffect(() => {
     let vivo = true
-    api
-      .subastasDisponibles(['PROGRAMADA', 'EN_CURSO'])
-      .then((lista) => vivo && setSubastas(lista))
-      .catch((e: Error) => vivo && setError(e.message))
+    let cargada = false
+    const consultar = () => {
+      if (document.visibilityState === 'hidden') return
+      api
+        .subastasDisponibles(['PROGRAMADA', 'EN_CURSO'])
+        .then((lista) => {
+          if (!vivo) return
+          cargada = true
+          setSubastas(lista)
+          setError(null)
+        })
+        // Si una actualización falla se conserva el último listado; el error solo se muestra si nunca cargó.
+        .catch((e: Error) => vivo && !cargada && setError(e.message))
+    }
+    consultar()
+    const intervalo = window.setInterval(consultar, ACTUALIZAR_CADA_MS)
+    document.addEventListener('visibilitychange', consultar)
     return () => {
       vivo = false
+      window.clearInterval(intervalo)
+      document.removeEventListener('visibilitychange', consultar)
     }
   }, [])
 
